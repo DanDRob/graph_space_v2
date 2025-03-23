@@ -1,0 +1,353 @@
+{% extends "base.html" %} {% block title %}Settings - Graph Space{% endblock %}
+{% block styles %}
+<style>
+  .settings-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  .settings-section {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    border-radius: 8px;
+    background-color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .settings-section h2 {
+    margin-top: 0;
+    color: #333;
+    font-size: 1.2rem;
+    font-weight: 600;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .settings-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #f5f5f5;
+  }
+
+  .settings-item:last-child {
+    border-bottom: none;
+  }
+
+  .settings-item-info {
+    flex: 1;
+  }
+
+  .settings-item-title {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .settings-item-description {
+    font-size: 0.9rem;
+    color: #666;
+  }
+
+  .settings-item-action {
+    margin-left: 1rem;
+  }
+
+  .btn-connect,
+  .btn-disconnect {
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-connect {
+    background-color: #4285f4;
+    color: white;
+    border: none;
+  }
+
+  .btn-connect:hover {
+    background-color: #3367d6;
+  }
+
+  .btn-disconnect {
+    background-color: #f44336;
+    color: white;
+    border: none;
+  }
+
+  .btn-disconnect:hover {
+    background-color: #d32f2f;
+  }
+
+  .connection-status {
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+  }
+
+  .connection-status .status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+  }
+
+  .status-connected {
+    background-color: #4caf50;
+  }
+
+  .status-disconnected {
+    background-color: #9e9e9e;
+  }
+
+  .section-actions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #f5f5f5;
+    display: flex;
+    justify-content: flex-end;
+  }
+</style>
+{% endblock %} {% block content %}
+<div class="settings-container">
+  <h1>Settings</h1>
+
+  <div class="settings-section">
+    <h2>Google Integration</h2>
+
+    <!-- Google Drive -->
+    <div class="settings-item">
+      <div class="settings-item-info">
+        <div class="settings-item-title">Google Drive</div>
+        <div class="settings-item-description">
+          Connect your Google Drive to import documents directly into Graph
+          Space.
+        </div>
+        <div class="connection-status">
+          <div
+            class="status-indicator status-disconnected"
+            id="google-drive-status-indicator"
+          ></div>
+          <span id="google-drive-status-text">Disconnected</span>
+        </div>
+      </div>
+      <div class="settings-item-action">
+        <button id="google-drive-connect-btn" class="btn-connect">
+          Connect
+        </button>
+        <button
+          id="google-drive-disconnect-btn"
+          class="btn-disconnect"
+          style="display: none"
+        >
+          Disconnect
+        </button>
+      </div>
+    </div>
+
+    <!-- Google Calendar -->
+    <div class="settings-item">
+      <div class="settings-item-info">
+        <div class="settings-item-title">Google Calendar</div>
+        <div class="settings-item-description">
+          Sync your tasks with Google Calendar to keep your schedule organized.
+        </div>
+        <div class="connection-status">
+          <div
+            class="status-indicator status-disconnected"
+            id="google-calendar-status-indicator"
+          ></div>
+          <span id="google-calendar-status-text">Disconnected</span>
+        </div>
+      </div>
+      <div class="settings-item-action">
+        <button id="google-calendar-connect-btn" class="btn-connect">
+          Connect
+        </button>
+        <button
+          id="google-calendar-disconnect-btn"
+          class="btn-disconnect"
+          style="display: none"
+        >
+          Disconnect
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    // Check Google authentication status on page load
+    checkGoogleAuthStatus();
+
+    // Set up Google Drive connect button
+    document
+      .getElementById("google-drive-connect-btn")
+      .addEventListener("click", function () {
+        startGoogleAuth();
+      });
+
+    // Set up Google Drive disconnect button
+    document
+      .getElementById("google-drive-disconnect-btn")
+      .addEventListener("click", function () {
+        disconnectGoogle();
+      });
+
+    // Google Calendar buttons use the same auth flow since we request both scopes at once
+    document
+      .getElementById("google-calendar-connect-btn")
+      .addEventListener("click", function () {
+        startGoogleAuth();
+      });
+
+    document
+      .getElementById("google-calendar-disconnect-btn")
+      .addEventListener("click", function () {
+        disconnectGoogle();
+      });
+
+    // Check URL parameters for OAuth callback response
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("google_auth") === "success") {
+      // Update UI to show success state
+      updateGoogleAuthUI(true);
+      // Remove the parameter from URL to avoid confusion on page refresh
+      window.history.replaceState({}, document.title, "/settings");
+    }
+  });
+
+  function checkGoogleAuthStatus() {
+    fetch("/api/integrations/google/auth/status")
+      .then((response) => response.json())
+      .then((data) => {
+        updateGoogleAuthUI(data.authenticated);
+      })
+      .catch((error) => {
+        console.error("Error checking Google auth status:", error);
+      });
+  }
+
+  function startGoogleAuth() {
+    fetch("/api/integrations/google/auth/start")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (data.auth_url) {
+          // Redirect to Google OAuth page
+          window.location.href = data.auth_url;
+        } else {
+          console.error("Error starting Google authentication:", data.error);
+          alert(
+            "Error connecting to Google: " + (data.error || "Unknown error")
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Error starting Google auth:", error);
+        alert("Error connecting to Google: " + error.message);
+      });
+  }
+
+  function disconnectGoogle() {
+    if (
+      !confirm(
+        "Are you sure you want to disconnect your Google account? This will remove access to Google Drive and Calendar."
+      )
+    ) {
+      return;
+    }
+
+    fetch("/api/integrations/google/auth/logout", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success) {
+          updateGoogleAuthUI(false);
+          alert("Google account disconnected successfully.");
+        } else {
+          alert(
+            "Error disconnecting Google account: " +
+              (data.error || "Unknown error")
+          );
+        }
+      })
+      .catch((error) => {
+        console.error("Error disconnecting Google:", error);
+        alert("Error disconnecting Google: " + error.message);
+      });
+  }
+
+  function updateGoogleAuthUI(isAuthenticated) {
+    // Update Google Drive UI
+    const driveConnectBtn = document.getElementById("google-drive-connect-btn");
+    const driveDisconnectBtn = document.getElementById(
+      "google-drive-disconnect-btn"
+    );
+    const driveStatusIndicator = document.getElementById(
+      "google-drive-status-indicator"
+    );
+    const driveStatusText = document.getElementById("google-drive-status-text");
+
+    // Update Google Calendar UI
+    const calendarConnectBtn = document.getElementById(
+      "google-calendar-connect-btn"
+    );
+    const calendarDisconnectBtn = document.getElementById(
+      "google-calendar-disconnect-btn"
+    );
+    const calendarStatusIndicator = document.getElementById(
+      "google-calendar-status-indicator"
+    );
+    const calendarStatusText = document.getElementById(
+      "google-calendar-status-text"
+    );
+
+    if (isAuthenticated) {
+      // Google Drive
+      driveConnectBtn.style.display = "none";
+      driveDisconnectBtn.style.display = "block";
+      driveStatusIndicator.classList.remove("status-disconnected");
+      driveStatusIndicator.classList.add("status-connected");
+      driveStatusText.textContent = "Connected";
+
+      // Google Calendar (uses same auth)
+      calendarConnectBtn.style.display = "none";
+      calendarDisconnectBtn.style.display = "block";
+      calendarStatusIndicator.classList.remove("status-disconnected");
+      calendarStatusIndicator.classList.add("status-connected");
+      calendarStatusText.textContent = "Connected";
+    } else {
+      // Google Drive
+      driveConnectBtn.style.display = "block";
+      driveDisconnectBtn.style.display = "none";
+      driveStatusIndicator.classList.remove("status-connected");
+      driveStatusIndicator.classList.add("status-disconnected");
+      driveStatusText.textContent = "Disconnected";
+
+      // Google Calendar (uses same auth)
+      calendarConnectBtn.style.display = "block";
+      calendarDisconnectBtn.style.display = "none";
+      calendarStatusIndicator.classList.remove("status-connected");
+      calendarStatusIndicator.classList.add("status-disconnected");
+      calendarStatusText.textContent = "Disconnected";
+    }
+  }
+</script>
+{% endblock %}

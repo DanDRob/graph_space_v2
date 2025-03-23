@@ -1,0 +1,1174 @@
+{% extends 'base.html' %} {% block title %}Documents - GraphSpace{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1><i class="fas fa-file-alt text-info me-2"></i> Documents</h1>
+  <div class="btn-group">
+    <button
+      id="upload-document-btn"
+      class="btn btn-info text-white"
+      data-bs-toggle="modal"
+      data-bs-target="#documentUploadModal"
+    >
+      <i class="fas fa-upload me-1"></i> Upload Document
+    </button>
+    <button
+      id="import-google-drive-btn"
+      class="btn btn-outline-info"
+      data-bs-toggle="modal"
+      data-bs-target="#googleDriveModal"
+    >
+      <i class="fab fa-google-drive me-1"></i> Import from Google Drive
+    </button>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-8">
+    <div class="input-group">
+      <span class="input-group-text"><i class="fas fa-search"></i></span>
+      <input
+        type="text"
+        id="search-documents"
+        class="form-control"
+        placeholder="Search documents by title, content, or tags..."
+      />
+    </div>
+  </div>
+  <div class="col-md-4">
+    <select id="filter-category" class="form-select">
+      <option value="">Filter by category</option>
+      <!-- Categories will be loaded dynamically -->
+    </select>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body p-0">
+    <div id="documents-container" class="list-group list-group-flush">
+      <!-- Documents will be loaded dynamically -->
+      <div class="list-group-item text-center py-5" id="documents-loading">
+        <div class="spinner-border text-info" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading documents...</p>
+      </div>
+      <div class="list-group-item text-center py-5 d-none" id="documents-empty">
+        <i class="fas fa-file-alt text-muted fa-3x mb-3"></i>
+        <h5>No documents found</h5>
+        <p>Upload your first document to get started!</p>
+        <button
+          class="btn btn-info text-white"
+          data-bs-toggle="modal"
+          data-bs-target="#documentUploadModal"
+        >
+          <i class="fas fa-upload me-1"></i> Upload Document
+        </button>
+        <button
+          class="btn btn-outline-info ms-2"
+          data-bs-toggle="modal"
+          data-bs-target="#googleDriveModal"
+          id="empty-google-drive-btn"
+        >
+          <i class="fab fa-google-drive me-1"></i> Import from Google Drive
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pagination -->
+<nav aria-label="Documents pagination" class="d-flex justify-content-center">
+  <ul class="pagination" id="documents-pagination">
+    <!-- Pagination will be added dynamically -->
+  </ul>
+</nav>
+
+<!-- Document Upload Modal -->
+<div
+  class="modal fade"
+  id="documentUploadModal"
+  tabindex="-1"
+  aria-labelledby="documentUploadModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="documentUploadModalLabel">
+          Upload Document
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <form
+          id="document-upload-form"
+          enctype="multipart/form-data"
+          action="/api/upload_document"
+          method="post"
+          target="upload-result-frame"
+        >
+          <div class="mb-3">
+            <label for="document-title" class="form-label">Title</label>
+            <input
+              type="text"
+              class="form-control"
+              id="document-title"
+              name="title"
+              placeholder="Document title"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label for="document-description" class="form-label"
+              >Description</label
+            >
+            <textarea
+              class="form-control"
+              id="document-description"
+              name="description"
+              rows="3"
+              placeholder="Document description"
+            ></textarea>
+          </div>
+          <div class="mb-3">
+            <label for="document-category" class="form-label">Category</label>
+            <input
+              type="text"
+              class="form-control"
+              id="document-category"
+              name="category"
+              placeholder="e.g., Reports, Invoices, Contracts"
+            />
+          </div>
+          <div class="mb-3">
+            <label for="document-tags" class="form-label">Tags</label>
+            <input
+              type="text"
+              class="form-control"
+              id="document-tags"
+              name="tags"
+              placeholder="Enter tags separated by commas"
+            />
+          </div>
+          <div class="mb-3">
+            <label for="document-file" class="form-label">Document File</label>
+            <input
+              type="file"
+              class="form-control"
+              id="document-file"
+              name="file"
+              required
+            />
+            <div class="form-text">
+              Allowed file types: PDF, DOCX, TXT, MD, CSV, XLSX (Max size: 16MB)
+            </div>
+          </div>
+          <div id="document-preview" class="mb-3 d-none">
+            <label class="form-label">Preview:</label>
+            <div class="card">
+              <div class="card-body">
+                <div id="document-preview-content"></div>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <!-- Hidden iframe to capture form submission result -->
+        <iframe name="upload-result-frame" style="display: none"></iframe>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form="document-upload-form"
+          class="btn btn-info text-white d-none"
+          id="direct-submit-btn"
+        >
+          <i class="fas fa-upload me-1"></i> Upload (Direct)
+        </button>
+        <button
+          type="button"
+          id="upload-document-submit"
+          class="btn btn-info text-white"
+        >
+          <i class="fas fa-upload me-1"></i> Upload
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Document View Modal -->
+<div
+  class="modal fade"
+  id="documentViewModal"
+  tabindex="-1"
+  aria-labelledby="documentViewModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="documentViewModalLabel">
+          Document Details
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <div id="document-view-content">
+          <div class="text-center py-5">
+            <div class="spinner-border text-info" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading document...</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Close
+        </button>
+        <a
+          href="#"
+          id="download-document-btn"
+          class="btn btn-info text-white"
+          download
+        >
+          <i class="fas fa-download me-1"></i> Download
+        </a>
+        <button type="button" id="delete-document-btn" class="btn btn-danger">
+          <i class="fas fa-trash me-1"></i> Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div
+  class="modal fade"
+  id="deleteConfirmModal"
+  tabindex="-1"
+  aria-labelledby="deleteConfirmModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteConfirmModalLabel">
+          Confirm Deletion
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Are you sure you want to delete this document? This action cannot be
+          undone.
+        </p>
+        <p id="delete-document-name" class="fw-bold"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button type="button" id="confirm-delete-btn" class="btn btn-danger">
+          <i class="fas fa-trash me-1"></i> Delete Permanently
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Google Drive Modal -->
+<div
+  class="modal fade"
+  id="googleDriveModal"
+  tabindex="-1"
+  aria-labelledby="googleDriveModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="googleDriveModalLabel">
+          <i class="fab fa-google-drive text-primary me-2"></i> Import from
+          Google Drive
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <div id="google-drive-auth-container">
+          <div class="text-center py-4">
+            <i class="fab fa-google-drive fa-4x text-muted mb-3"></i>
+            <h5>Connect to Google Drive</h5>
+            <p class="mb-4">
+              Connect your Google Drive account to import documents directly
+              into GraphSpace.
+            </p>
+            <button id="google-drive-connect-btn" class="btn btn-primary">
+              <i class="fab fa-google me-1"></i> Connect Google Drive
+            </button>
+          </div>
+        </div>
+
+        <div id="google-drive-browser-container" style="display: none">
+          <!-- Search bar -->
+          <div class="input-group mb-3">
+            <input
+              type="text"
+              id="google-drive-search"
+              class="form-control"
+              placeholder="Search files..."
+              aria-label="Search files"
+            />
+            <button
+              class="btn btn-outline-secondary"
+              type="button"
+              id="google-drive-search-btn"
+            >
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+
+          <!-- Files list -->
+          <div id="google-drive-files-container" class="mb-3">
+            <div id="google-drive-loading" class="text-center py-5">
+              <div class="spinner-border text-info" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2">Loading files from Google Drive...</p>
+            </div>
+            <div id="google-drive-files-list" class="list-group"></div>
+            <div id="google-drive-empty" class="text-center py-4 d-none">
+              <i class="fas fa-folder-open text-muted fa-3x mb-3"></i>
+              <h5>No files found</h5>
+              <p>No matching files were found in your Google Drive.</p>
+            </div>
+            <div id="google-drive-error" class="text-center py-4 d-none">
+              <i
+                class="fas fa-exclamation-triangle text-warning fa-3x mb-3"
+              ></i>
+              <h5>Error accessing Google Drive</h5>
+              <p>
+                There was an error accessing your Google Drive files. Please try
+                again later.
+              </p>
+              <button id="google-drive-retry-btn" class="btn btn-outline-info">
+                <i class="fas fa-sync-alt me-1"></i> Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" id="google-drive-footer" style="display: none">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="google-drive-import-btn"
+          disabled
+        >
+          Import Selected File
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<script>
+  $(document).ready(function () {
+    console.log("Document page loaded");
+
+    // Load documents on page load
+    loadDocuments();
+
+    // Set up search and filter functionality
+    $("#search-documents").on("keyup", function () {
+      const query = $(this).val().toLowerCase();
+      filterDocuments(query, $("#filter-category").val());
+    });
+
+    $("#filter-category").on("change", function () {
+      filterDocuments(
+        $("#search-documents").val().toLowerCase(),
+        $(this).val()
+      );
+    });
+
+    // Set up upload button click handler
+    $("#upload-document-submit").on("click", function () {
+      console.log("Upload button clicked");
+      uploadDocument();
+    });
+
+    // Set up form submission to prevent default and use our AJAX function
+    $("#document-upload-form").on("submit", function (e) {
+      // Only prevent default if using AJAX (not when direct submission is needed)
+      if ($("#direct-submit-btn").hasClass("d-none")) {
+        e.preventDefault();
+        console.log("Form submission intercepted");
+        uploadDocument();
+      } else {
+        console.log("Form being submitted directly");
+      }
+    });
+
+    // Handle file selection for preview
+    $("#document-file").on("change", function () {
+      const fileInput = document.getElementById("document-file");
+      if (fileInput.files && fileInput.files[0]) {
+        const file = fileInput.files[0];
+        $("#document-preview").removeClass("d-none");
+
+        // Auto-fill title if not already filled
+        if (!$("#document-title").val() && file.name) {
+          $("#document-title").val(file.name.split(".").slice(0, -1).join("."));
+        }
+
+        // Simple preview for text files
+        if (file.type.startsWith("text/")) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            $("#document-preview-content").html(
+              `<pre>${e.target.result}</pre>`
+            );
+          };
+          reader.readAsText(file);
+        } else {
+          $("#document-preview-content").html(`<div class="alert alert-info">
+            <i class="fas fa-file me-2"></i> ${file.name} (${(
+            file.size / 1024
+          ).toFixed(2)} KB)
+          </div>`);
+        }
+      } else {
+        $("#document-preview").addClass("d-none");
+      }
+    });
+
+    // Set up event handlers for document actions
+    // Set up delete button click handler
+    $("#delete-document-btn").on("click", function () {
+      const docId = $(this).data("id");
+      // Get document title from the modal
+      const docTitle = $("#documentViewModalLabel").text();
+
+      // Set up the delete confirmation modal
+      $("#delete-document-name").text(docTitle);
+      $("#confirm-delete-btn").data("id", docId);
+
+      // Hide document view modal and show delete confirmation
+      $("#documentViewModal").modal("hide");
+      $("#deleteConfirmModal").modal("show");
+    });
+
+    // Set up confirm delete button
+    $("#confirm-delete-btn").on("click", function () {
+      deleteDocument();
+    });
+  });
+
+  // Load documents from API
+  function loadDocuments() {
+    $.ajax({
+      url: "/api/documents",
+      method: "GET",
+      success: function (response) {
+        const documents = response.documents || [];
+        const container = $("#documents-container");
+        container.empty();
+
+        // Extract unique categories for the filter dropdown
+        const categories = [
+          ...new Set(
+            documents.map((d) => d.metadata?.category || "uncategorized")
+          ),
+        ];
+        const categoryFilter = $("#filter-category");
+        categoryFilter.find("option:not(:first)").remove();
+        categories.forEach((category) => {
+          categoryFilter.append(
+            `<option value="${category}">${category}</option>`
+          );
+        });
+
+        if (documents.length === 0) {
+          $("#documents-empty").removeClass("d-none");
+          return;
+        }
+
+        documents.forEach((doc) => {
+          const tagsHtml = (doc.tags || [])
+            .map(
+              (tag) =>
+                `<span class="badge bg-info text-white me-1">${tag}</span>`
+            )
+            .join("");
+
+          const docElement = $(`
+            <div class="list-group-item document-item" 
+                 data-id="${doc.id}" 
+                 data-category="${doc.metadata?.category || "uncategorized"}"
+                 data-tags='${JSON.stringify(doc.tags || [])}'>
+              <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-1 document-title">${
+                  doc.title || "Untitled Document"
+                }</h5>
+                <small>${formatDate(
+                  doc.created_at || doc.metadata?.created_at,
+                  true
+                )}</small>
+              </div>
+              <p class="mb-1 document-description">${
+                doc.metadata?.description || ""
+              }</p>
+              <div class="d-flex justify-content-between align-items-center">
+                <div>
+                  <span class="badge bg-secondary">${
+                    doc.metadata?.category || "uncategorized"
+                  }</span>
+                  ${tagsHtml}
+                </div>
+                <div>
+                  <button class="btn btn-sm btn-outline-info view-document-btn" data-id="${
+                    doc.id
+                  }">
+                    <i class="fas fa-eye"></i> View
+                  </button>
+                  <a href="/api/documents/${
+                    doc.id
+                  }/download" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-download"></i> Download
+                  </a>
+                </div>
+              </div>
+            </div>
+          `);
+
+          container.append(docElement);
+        });
+
+        // Set up view document buttons
+        $(".view-document-btn").on("click", function () {
+          const docId = $(this).data("id");
+          viewDocument(docId);
+        });
+      },
+      error: function (xhr, status, error) {
+        console.error("Error loading documents:", error);
+        $("#documents-container").html(`
+          <div class="list-group-item text-center py-5">
+            <div class="alert alert-danger">
+              Error loading documents. Please try again.
+            </div>
+          </div>
+        `);
+      },
+    });
+  }
+
+  // View document
+  function viewDocument(docId) {
+    console.log(`Viewing document: ${docId}`);
+
+    // Reset and show loading state
+    $("#document-view-content").html(`
+      <div class="text-center py-5">
+        <div class="spinner-border text-info" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading document...</p>
+      </div>
+    `);
+
+    $("#documentViewModal").modal("show");
+
+    $.ajax({
+      url: `/api/documents/${docId}`,
+      method: "GET",
+      success: function (response) {
+        console.log("Document details loaded:", response);
+        const doc = response;
+
+        // Set up delete button
+        $("#delete-document-btn").data("id", docId);
+
+        // Set up download button
+        $("#download-document-btn").attr(
+          "href",
+          `/api/documents/${docId}/download`
+        );
+
+        // Format created/updated dates
+        const createdAt = formatDate(
+          doc.created_at || doc.metadata?.created_at,
+          true
+        );
+        const updatedAt = formatDate(
+          doc.updated_at || doc.metadata?.updated_at,
+          true
+        );
+
+        // Build content HTML
+        let content = `
+          <h4 class="mb-3">${doc.title || "Untitled Document"}</h4>
+          
+          <div class="mb-3">
+            <strong>File:</strong> ${doc.file_name || "Unknown file"}
+          </div>
+          
+          ${
+            doc.metadata?.description
+              ? `<div class="mb-3">
+              <strong>Description:</strong>
+              <p>${doc.metadata.description}</p>
+            </div>`
+              : ""
+          }
+          
+          <div class="mb-3">
+            <strong>Created:</strong> ${createdAt}
+            ${
+              updatedAt !== createdAt
+                ? `<br><strong>Updated:</strong> ${updatedAt}`
+                : ""
+            }
+          </div>
+          
+          <div class="mb-3">
+            <strong>Category:</strong> ${
+              doc.metadata?.category || "Uncategorized"
+            }
+          </div>
+          
+          <div class="mb-3">
+            <strong>Tags:</strong> 
+            ${
+              (doc.tags || []).length > 0
+                ? (doc.tags || [])
+                    .map(
+                      (tag) =>
+                        `<span class="badge bg-info text-white me-1">${tag}</span>`
+                    )
+                    .join("")
+                : "<span class='text-muted'>No tags</span>"
+            }
+          </div>
+          
+          ${
+            doc.summary
+              ? `<div class="mb-3">
+              <strong>Summary:</strong>
+              <p>${doc.summary}</p>
+            </div>`
+              : ""
+          }
+        `;
+
+        // Display the content
+        $("#document-view-content").html(content);
+        $("#documentViewModalLabel").text(doc.title || "Document Details");
+      },
+      error: function (xhr, status, error) {
+        console.error("Error loading document details:", error);
+        $("#document-view-content").html(`
+          <div class="alert alert-danger">
+            Error loading document details. Please try again.
+          </div>
+        `);
+      },
+    });
+  }
+
+  // Upload document
+  function uploadDocument() {
+    console.log("Upload document function called");
+
+    const form = document.getElementById("document-upload-form");
+    console.log("Form:", form);
+
+    if (!form.checkValidity()) {
+      console.log("Form validation failed");
+      form.reportValidity();
+      return;
+    }
+
+    // Show loading state
+    $("#upload-document-submit").html(`
+      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      Uploading...
+    `);
+    $("#upload-document-submit").prop("disabled", true);
+
+    // Get the file input element and check if a file is selected
+    const fileInput = document.getElementById("document-file");
+    if (!fileInput.files || fileInput.files.length === 0) {
+      console.error("No file selected");
+      alert("Please select a file to upload");
+      $("#upload-document-submit").html(
+        `<i class="fas fa-upload me-1"></i> Upload`
+      );
+      $("#upload-document-submit").prop("disabled", false);
+      return;
+    }
+
+    console.log("Selected file:", fileInput.files[0].name);
+
+    // Create FormData from the form element
+    const formData = new FormData(form);
+
+    // Log FormData contents (for debugging)
+    console.log("FormData created with these entries:");
+    for (let pair of formData.entries()) {
+      console.log(
+        pair[0] + ": " + (pair[0] === "file" ? pair[1].name : pair[1])
+      );
+    }
+
+    const requestOptions = {
+      url: "/api/upload_document",
+      method: "POST",
+      data: formData,
+      processData: false,
+      contentType: false,
+      // No auth headers for hackathon
+      success: function (response) {
+        console.log("Upload success response:", response);
+        // Reset form and close modal
+        form.reset();
+        $("#document-preview").addClass("d-none");
+        $("#documentUploadModal").modal("hide");
+
+        // Reload documents
+        loadDocuments();
+
+        // Show success toast
+        if (typeof showToast === "function") {
+          showToast(
+            "success",
+            "Document Uploaded",
+            "Your document has been uploaded successfully."
+          );
+        }
+      },
+      error: function (xhr, status, error) {
+        console.error("Upload error:", error);
+        console.error("Status:", status);
+        console.error("Response:", xhr.responseText);
+
+        if (typeof showToast === "function") {
+          showToast(
+            "error",
+            "Upload Failed",
+            xhr.responseJSON?.error ||
+              "Failed to upload document. Please try again."
+          );
+        }
+
+        // If AJAX fails repeatedly, show the direct submit button
+        $("#direct-submit-btn").removeClass("d-none");
+      },
+      complete: function () {
+        // Reset button state
+        $("#upload-document-submit").html(
+          `<i class="fas fa-upload me-1"></i> Upload`
+        );
+        $("#upload-document-submit").prop("disabled", false);
+      },
+    };
+
+    console.log(
+      "Sending AJAX request with options:",
+      JSON.stringify(requestOptions, (key, value) => {
+        if (key === "data") return "FormData object";
+        return value;
+      })
+    );
+
+    $.ajax(requestOptions);
+  }
+
+  // Delete document
+  function deleteDocument() {
+    const docId = $("#confirm-delete-btn").data("id");
+
+    // Show loading state
+    $("#confirm-delete-btn").html(`
+      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      Deleting...
+    `);
+    $("#confirm-delete-btn").prop("disabled", true);
+
+    $.ajax({
+      url: `/api/documents/${docId}`,
+      method: "DELETE",
+      success: function (response) {
+        // Close modal and reload documents
+        $("#deleteConfirmModal").modal("hide");
+        loadDocuments();
+
+        // Show success toast
+        if (typeof showToast === "function") {
+          showToast(
+            "success",
+            "Document Deleted",
+            "The document has been permanently deleted."
+          );
+        }
+      },
+      error: function (xhr, status, error) {
+        console.error("Error deleting document:", error);
+
+        // Show error toast
+        if (typeof showToast === "function") {
+          showToast(
+            "error",
+            "Deletion Failed",
+            xhr.responseJSON?.error ||
+              "Failed to delete document. Please try again."
+          );
+        }
+      },
+      complete: function () {
+        // Reset button state
+        $("#confirm-delete-btn").html(
+          `<i class="fas fa-trash me-1"></i> Delete Permanently`
+        );
+        $("#confirm-delete-btn").prop("disabled", false);
+      },
+    });
+  }
+
+  // Filter documents by search query and category
+  function filterDocuments(query, category) {
+    console.log(
+      `Filtering documents: query="${query}", category="${category}"`
+    );
+    $(".document-item").each(function () {
+      const title = $(this).find(".document-title").text().toLowerCase();
+      const description = $(this)
+        .find(".document-description")
+        .text()
+        .toLowerCase();
+      const documentCategory = $(this).data("category").toLowerCase();
+      const tags = $(this).data("tags") || [];
+
+      const matchesQuery =
+        !query ||
+        title.includes(query) ||
+        description.includes(query) ||
+        tags.some((tag) => tag.toLowerCase().includes(query));
+
+      const matchesCategory =
+        !category || documentCategory === category.toLowerCase();
+
+      if (matchesQuery && matchesCategory) {
+        $(this).show();
+      } else {
+        $(this).hide();
+      }
+    });
+  }
+
+  // Google Drive Integration
+  document.addEventListener("DOMContentLoaded", function () {
+    // Elements
+    const googleDriveAuthContainer = document.getElementById(
+      "google-drive-auth-container"
+    );
+    const googleDriveBrowserContainer = document.getElementById(
+      "google-drive-browser-container"
+    );
+    const googleDriveConnectBtn = document.getElementById(
+      "google-drive-connect-btn"
+    );
+    const googleDriveSearch = document.getElementById("google-drive-search");
+    const googleDriveSearchBtn = document.getElementById(
+      "google-drive-search-btn"
+    );
+    const googleDriveFilesList = document.getElementById(
+      "google-drive-files-list"
+    );
+    const googleDriveLoading = document.getElementById("google-drive-loading");
+    const googleDriveEmpty = document.getElementById("google-drive-empty");
+    const googleDriveError = document.getElementById("google-drive-error");
+    const googleDriveRetryBtn = document.getElementById(
+      "google-drive-retry-btn"
+    );
+    const googleDriveImportBtn = document.getElementById(
+      "google-drive-import-btn"
+    );
+    const googleDriveFooter = document.getElementById("google-drive-footer");
+    const googleDriveModal = document.getElementById("googleDriveModal");
+
+    let selectedFileId = null;
+
+    // Check Google Drive authentication on modal open
+    googleDriveModal.addEventListener("show.bs.modal", function () {
+      checkGoogleAuthStatus();
+    });
+
+    // Connect to Google Drive
+    googleDriveConnectBtn.addEventListener("click", function () {
+      fetch("/api/integrations/google/auth/start")
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then((data) => {
+          if (data.auth_url) {
+            // Redirect to Google auth page
+            window.location.href = data.auth_url;
+          } else {
+            console.error("Error starting Google auth:", data.error);
+            alert(
+              "Error connecting to Google Drive: " +
+                (data.error || "Unknown error")
+            );
+          }
+        })
+        .catch((error) => {
+          console.error("Error connecting to Google Drive:", error);
+          alert("Error connecting to Google Drive: " + error.message);
+        });
+    });
+
+    // Search files
+    googleDriveSearchBtn.addEventListener("click", function () {
+      const query = googleDriveSearch.value.trim();
+      loadGoogleDriveFiles(query);
+    });
+
+    // Search on Enter key
+    googleDriveSearch.addEventListener("keypress", function (e) {
+      if (e.key === "Enter") {
+        googleDriveSearchBtn.click();
+      }
+    });
+
+    // Retry button
+    googleDriveRetryBtn.addEventListener("click", function () {
+      loadGoogleDriveFiles();
+    });
+
+    // Import button
+    googleDriveImportBtn.addEventListener("click", function () {
+      if (selectedFileId) {
+        importGoogleDriveFile(selectedFileId);
+      }
+    });
+
+    // Check Google authentication status
+    function checkGoogleAuthStatus() {
+      fetch("/api/integrations/google/auth/status")
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.authenticated) {
+            // User is authenticated, show file browser
+            googleDriveAuthContainer.style.display = "none";
+            googleDriveBrowserContainer.style.display = "block";
+            googleDriveFooter.style.display = "flex";
+            loadGoogleDriveFiles();
+          } else {
+            // User is not authenticated, show auth screen
+            googleDriveAuthContainer.style.display = "block";
+            googleDriveBrowserContainer.style.display = "none";
+            googleDriveFooter.style.display = "none";
+          }
+        })
+        .catch((error) => {
+          console.error("Error checking Google auth status:", error);
+          // Show error state
+          googleDriveAuthContainer.style.display = "block";
+          googleDriveBrowserContainer.style.display = "none";
+          googleDriveFooter.style.display = "none";
+        });
+    }
+
+    // Load Google Drive files
+    function loadGoogleDriveFiles(query = "") {
+      // Reset selected file
+      selectedFileId = null;
+      googleDriveImportBtn.disabled = true;
+
+      // Show loading state
+      googleDriveLoading.style.display = "block";
+      googleDriveFilesList.style.display = "none";
+      googleDriveEmpty.style.display = "none";
+      googleDriveError.style.display = "none";
+
+      // Build URL
+      let url = "/api/integrations/google/drive/files?max_results=50";
+      if (query) {
+        url += "&query=" + encodeURIComponent(query);
+      }
+
+      // Fetch files
+      fetch(url)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Failed to load Google Drive files");
+          }
+          return response.json();
+        })
+        .then((data) => {
+          const files = data.files || [];
+
+          // Hide loading state
+          googleDriveLoading.style.display = "none";
+
+          if (files.length === 0) {
+            // Show empty state
+            googleDriveEmpty.style.display = "block";
+            googleDriveFilesList.style.display = "none";
+            return;
+          }
+
+          // Show files list
+          googleDriveFilesList.style.display = "block";
+          googleDriveFilesList.innerHTML = "";
+
+          // Add files to list
+          files.forEach((file) => {
+            // Skip folders for now
+            if (file.mimeType === "application/vnd.google-apps.folder") {
+              return;
+            }
+
+            const fileItem = document.createElement("a");
+            fileItem.href = "#";
+            fileItem.className = "list-group-item list-group-item-action";
+            fileItem.dataset.fileId = file.id;
+
+            // Set icon based on mime type
+            let iconClass = "fas fa-file text-muted";
+            if (file.mimeType) {
+              if (file.mimeType.includes("pdf")) {
+                iconClass = "fas fa-file-pdf text-danger";
+              } else if (file.mimeType.includes("spreadsheet")) {
+                iconClass = "fas fa-file-excel text-success";
+              } else if (file.mimeType.includes("document")) {
+                iconClass = "fas fa-file-word text-primary";
+              } else if (file.mimeType.includes("presentation")) {
+                iconClass = "fas fa-file-powerpoint text-warning";
+              } else if (file.mimeType.includes("image")) {
+                iconClass = "fas fa-file-image text-info";
+              }
+            }
+
+            // Format modified date
+            const modifiedDate = file.modifiedTime
+              ? new Date(file.modifiedTime).toLocaleDateString()
+              : "";
+
+            fileItem.innerHTML = `
+              <div class="d-flex w-100 justify-content-between align-items-center">
+                <div>
+                  <i class="${iconClass} me-2"></i>
+                  <span>${file.name}</span>
+                </div>
+                <small class="text-muted">${modifiedDate}</small>
+              </div>
+            `;
+
+            // Handle file selection
+            fileItem.addEventListener("click", function (e) {
+              e.preventDefault();
+
+              // Update selected state
+              document
+                .querySelectorAll(
+                  "#google-drive-files-list .list-group-item.active"
+                )
+                .forEach((item) => {
+                  item.classList.remove("active");
+                });
+              fileItem.classList.add("active");
+
+              // Update selected file ID
+              selectedFileId = file.id;
+              googleDriveImportBtn.disabled = false;
+            });
+
+            googleDriveFilesList.appendChild(fileItem);
+          });
+        })
+        .catch((error) => {
+          console.error("Error loading Google Drive files:", error);
+
+          // Show error state
+          googleDriveLoading.style.display = "none";
+          googleDriveFilesList.style.display = "none";
+          googleDriveEmpty.style.display = "none";
+          googleDriveError.style.display = "block";
+        });
+    }
+
+    // Import Google Drive file
+    function importGoogleDriveFile(fileId) {
+      // Update button state
+      googleDriveImportBtn.disabled = true;
+      googleDriveImportBtn.innerHTML =
+        '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Importing...';
+
+      // Import file
+      fetch(`/api/integrations/google/drive/download/${fileId}`)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Failed to import file from Google Drive");
+          }
+          return response.json();
+        })
+        .then((data) => {
+          if (data.success) {
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(googleDriveModal);
+            modal.hide();
+
+            // Show success message
+            alert(`Successfully imported "${data.filename}" from Google Drive`);
+
+            // Reload documents list
+            loadDocuments();
+          } else {
+            throw new Error(data.error || "Failed to process file");
+          }
+        })
+        .catch((error) => {
+          console.error("Error importing Google Drive file:", error);
+          alert("Error importing file: " + error.message);
+
+          // Reset button state
+          googleDriveImportBtn.disabled = false;
+          googleDriveImportBtn.innerHTML = "Import Selected File";
+        });
+    }
+  });
+</script>
+{% endblock %}

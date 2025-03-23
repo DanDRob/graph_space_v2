@@ -18,6 +18,14 @@ def create_app(graphspace_instance=None):
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+    # Set a secret key for session
+    app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+    # Log upload folder path for debugging
+    print(f"Upload folder configured at: {app.config['UPLOAD_FOLDER']}")
+    print(
+        f"Upload folder exists: {os.path.exists(app.config['UPLOAD_FOLDER'])}")
+
     # Store GraphSpace instance
     app.config['GRAPHSPACE'] = graphspace_instance
 
@@ -36,17 +44,29 @@ def create_app(graphspace_instance=None):
     from graph_space_v2.api.routes.contacts import contacts_bp
     from graph_space_v2.api.routes.documents import documents_bp
     from graph_space_v2.api.routes.query import query_bp
+    from graph_space_v2.api.routes.auth import auth_bp
+    from graph_space_v2.api.routes.integrations import integrations_bp
 
     app.register_blueprint(notes_bp, url_prefix='/api')
     app.register_blueprint(tasks_bp, url_prefix='/api')
     app.register_blueprint(contacts_bp, url_prefix='/api')
     app.register_blueprint(documents_bp, url_prefix='/api')
     app.register_blueprint(query_bp, url_prefix='/api')
+    app.register_blueprint(auth_bp, url_prefix='/api')
+    app.register_blueprint(integrations_bp, url_prefix='/api')
+
+    # Register the main OAuth callback handler at root level
+    from graph_space_v2.api.routes.integrations import oauth2callback
+    app.route('/oauth2callback')(oauth2callback)
 
     # UI routes
     @app.route('/')
     def index():
         return render_template('index.html')
+
+    @app.route('/login')
+    def login():
+        return render_template('login.html')
 
     @app.route('/notes')
     def notes():
@@ -58,23 +78,23 @@ def create_app(graphspace_instance=None):
 
     @app.route('/contacts')
     def contacts():
-        # Redirect to index until contacts.html is created
-        return render_template('index.html')
+        # Render the contacts template
+        return render_template('contacts.html')
 
     @app.route('/documents')
     def documents():
-        # Redirect to index until documents.html is created
-        return render_template('index.html')
+        # Render the documents template
+        return render_template('documents.html')
 
     @app.route('/graph')
     def graph():
-        # Redirect to index until graph.html is created
-        return render_template('index.html')
+        # Render the graph template
+        return render_template('graph.html')
 
     @app.route('/settings')
     def settings():
-        # Redirect to index until settings.html is created
-        return render_template('index.html')
+        # Render the settings template
+        return render_template('settings.html')
 
     @app.route('/api/status')
     def api_status():

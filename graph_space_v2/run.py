@@ -2,6 +2,12 @@
 import os
 import sys
 import traceback
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+print(
+    f"Environment variables loaded. Google integration: {os.environ.get('ENABLE_GOOGLE_INTEGRATION', 'false')}")
 
 # Add the parent directory to the path so we can find the graph_space_v2 module
 # Get the absolute path of this script
@@ -52,7 +58,7 @@ except ImportError as e:
 
 # Import the path utilities
 try:
-    from graph_space_v2.utils.helpers.path_utils import init_dirs, get_user_data_path, get_config_path
+    from graph_space_v2.utils.helpers.path_utils import init_dirs, get_user_data_path, get_config_path, debug_data_file
 except ImportError as e:
     print(f"Error importing path_utils: {e}")
     traceback.print_exc()
@@ -62,7 +68,23 @@ except ImportError as e:
 def main():
     """Main entry point for the GraphSpace application."""
     # Initialize all necessary directories
+    print("Initializing directories...")
     init_dirs()
+    print("Directories initialized.")
+
+    # Debug and fix the data file structure if needed
+    print("Checking data file structure...")
+    debug_data_file()
+    print("Data file structure verified.")
+
+    # Check if Google integration is enabled
+    use_google_drive = os.environ.get(
+        'ENABLE_GOOGLE_INTEGRATION', 'false').lower() == 'true'
+
+    if use_google_drive:
+        print("Google integration is enabled. Authentication will happen when needed through the web interface.")
+    else:
+        print("Google integration is disabled.")
 
     # Create GraphSpace instance with paths from path_utils
     try:
@@ -71,7 +93,7 @@ def main():
             config_path=get_config_path(),
             use_api=True,
             api_key=os.environ.get("DEEPSEEK_API_KEY"),
-            use_google_drive=False
+            use_google_drive=use_google_drive
         )
 
         # Import web app and run it

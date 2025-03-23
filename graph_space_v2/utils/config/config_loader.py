@@ -41,7 +41,7 @@ class ConfigLoader:
             },
             "llm": {
                 "api_enabled": True,
-                "model": "deepseek-ai/deepseek-chat-v1",
+                "model": "deepseek-chat",
                 "fallback_model": "meta-llama/Llama-3-8B-Instruct"
             },
             "document_processing": {

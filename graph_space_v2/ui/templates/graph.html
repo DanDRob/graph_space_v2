@@ -1,0 +1,794 @@
+{% extends 'base.html' %} {% block title %}Knowledge Graph - GraphSpace{%
+endblock %} {% block extra_css %}
+<style>
+  #graph-container {
+    width: 100%;
+    height: 600px;
+    background-color: #f8f9fa;
+    border-radius: 0.25rem;
+  }
+
+  .node-tooltip {
+    position: absolute;
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 0.75rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    z-index: 1000;
+    pointer-events: none;
+    max-width: 300px;
+  }
+
+  .graph-legend {
+    padding: 10px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: 5px;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 100;
+    font-size: 12px;
+  }
+
+  .graph-legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+
+  .legend-color {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    margin-right: 8px;
+  }
+</style>
+{% endblock %} {% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1>
+    <i class="fas fa-project-diagram text-secondary me-2"></i> Knowledge Graph
+  </h1>
+  <div class="btn-group">
+    <button id="zoom-in-btn" class="btn btn-outline-secondary">
+      <i class="fas fa-search-plus"></i>
+    </button>
+    <button id="zoom-out-btn" class="btn btn-outline-secondary">
+      <i class="fas fa-search-minus"></i>
+    </button>
+    <button id="reset-zoom-btn" class="btn btn-outline-secondary">
+      <i class="fas fa-expand"></i>
+    </button>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-6">
+    <div class="input-group">
+      <span class="input-group-text"><i class="fas fa-search"></i></span>
+      <input
+        type="text"
+        id="search-nodes"
+        class="form-control"
+        placeholder="Search for nodes..."
+      />
+      <button class="btn btn-outline-secondary" id="search-btn">Search</button>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="btn-group w-100">
+      <button class="btn btn-outline-primary" id="filter-all" data-filter="all">
+        <i class="fas fa-border-all"></i> All
+      </button>
+      <button
+        class="btn btn-outline-primary"
+        id="filter-notes"
+        data-filter="note"
+      >
+        <i class="fas fa-sticky-note"></i> Notes
+      </button>
+      <button
+        class="btn btn-outline-success"
+        id="filter-tasks"
+        data-filter="task"
+      >
+        <i class="fas fa-tasks"></i> Tasks
+      </button>
+      <button
+        class="btn btn-outline-warning"
+        id="filter-contacts"
+        data-filter="contact"
+      >
+        <i class="fas fa-address-book"></i> Contacts
+      </button>
+      <button
+        class="btn btn-outline-info"
+        id="filter-documents"
+        data-filter="document"
+      >
+        <i class="fas fa-file-alt"></i> Documents
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body p-0 position-relative">
+    <div id="graph-container">
+      <!-- Graph will be loaded dynamically -->
+      <div
+        class="position-absolute top-50 start-50 translate-middle"
+        id="graph-loading"
+      >
+        <div class="spinner-border text-secondary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading knowledge graph...</p>
+      </div>
+    </div>
+
+    <!-- Graph Legend -->
+    <div class="graph-legend d-none" id="graph-legend">
+      <h6 class="mb-2">Legend</h6>
+      <div class="graph-legend-item">
+        <div class="legend-color bg-primary"></div>
+        <span>Notes</span>
+      </div>
+      <div class="graph-legend-item">
+        <div class="legend-color bg-success"></div>
+        <span>Tasks</span>
+      </div>
+      <div class="graph-legend-item">
+        <div class="legend-color bg-warning"></div>
+        <span>Contacts</span>
+      </div>
+      <div class="graph-legend-item">
+        <div class="legend-color bg-info"></div>
+        <span>Documents</span>
+      </div>
+      <div class="graph-legend-item">
+        <div class="legend-color bg-secondary"></div>
+        <span>Other</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Node Details Modal -->
+<div
+  class="modal fade"
+  id="nodeDetailsModal"
+  tabindex="-1"
+  aria-labelledby="nodeDetailsModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="nodeDetailsModalLabel">Node Details</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <div id="node-details-content">
+          <div class="text-center py-5">
+            <div class="spinner-border text-secondary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading node details...</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Close
+        </button>
+        <a href="#" id="view-node-btn" class="btn btn-primary">
+          <i class="fas fa-external-link-alt me-1"></i> View Details
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %} {% block extra_js %}
+<!-- Include Sigma.js for graph visualization -->
+<script src="https://cdn.jsdelivr.net/npm/sigma@2.4.0/build/sigma.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology@0.25.1/dist/graphology.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology-layout@0.6.1/dist/graphology-layout.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology-layout-forceatlas2@0.10.1/dist/graphology-layout-forceatlas2.min.js"></script>
+
+<script>
+  $(document).ready(function () {
+    // Initialize graph
+    let graph = null;
+    let renderer = null;
+    let camera = null;
+    let nodeTooltip = null;
+    let activeFilter = "all";
+    let searchTerm = "";
+
+    // Node colors by type
+    const nodeColors = {
+      note: "#0d6efd", // primary
+      task: "#198754", // success
+      contact: "#ffc107", // warning
+      document: "#0dcaf0", // info
+      default: "#6c757d", // secondary
+    };
+
+    loadGraph();
+
+    // Set up search
+    $("#search-btn").on("click", function () {
+      searchTerm = $("#search-nodes").val().toLowerCase();
+      applyFilters();
+    });
+
+    $("#search-nodes").on("keypress", function (e) {
+      if (e.which === 13) {
+        searchTerm = $(this).val().toLowerCase();
+        applyFilters();
+      }
+    });
+
+    // Set up filter buttons
+    $("[data-filter]").on("click", function () {
+      activeFilter = $(this).data("filter");
+      $("[data-filter]").removeClass("active");
+      $(this).addClass("active");
+      applyFilters();
+    });
+
+    // Set up zoom controls
+    $("#zoom-in-btn").on("click", function () {
+      if (camera) {
+        const ratio = camera.getState().ratio / 0.8;
+        camera.animate({ ratio }, { duration: 300 });
+      }
+    });
+
+    $("#zoom-out-btn").on("click", function () {
+      if (camera) {
+        const ratio = camera.getState().ratio * 0.8;
+        camera.animate({ ratio }, { duration: 300 });
+      }
+    });
+
+    $("#reset-zoom-btn").on("click", function () {
+      if (camera) {
+        camera.animate({ ratio: 1, x: 0.5, y: 0.5 }, { duration: 300 });
+      }
+    });
+
+    // Load graph data from API
+    function loadGraph() {
+      $("#graph-loading").removeClass("d-none");
+      $("#graph-legend").addClass("d-none");
+
+      $.ajax({
+        url: "/api/graph_data",
+        method: "GET",
+        success: function (data) {
+          $("#graph-loading").addClass("d-none");
+          $("#graph-legend").removeClass("d-none");
+
+          initializeGraph(data);
+        },
+        error: function (xhr, status, error) {
+          $("#graph-loading").addClass("d-none");
+          $("#graph-container").html(`
+            <div class="alert alert-danger m-3">
+              Error loading knowledge graph data. Please try again later.
+            </div>
+          `);
+          console.error("Error loading graph data:", error);
+        },
+      });
+    }
+
+    // Initialize the graph visualization
+    function initializeGraph(data) {
+      // Create a new graph instance
+      graph = new graphology.Graph();
+
+      // Add nodes
+      data.nodes.forEach((node) => {
+        const color = nodeColors[node.type] || nodeColors.default;
+        graph.addNode(node.id, {
+          label: node.label,
+          size: 10,
+          color: color,
+          type: node.type,
+          originalColor: color,
+          data: node.data,
+        });
+      });
+
+      // Add edges
+      data.edges.forEach((edge) => {
+        if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
+          graph.addEdge(edge.source, edge.target, {
+            type: edge.type,
+            size: 1,
+            color: "#ccc",
+            data: edge.data,
+          });
+        }
+      });
+
+      // Apply layout
+      graphologyLayout.forceAtlas2.assign(graph, {
+        iterations: 100,
+        settings: {
+          barnesHutOptimize: true,
+          strongGravityMode: true,
+          gravity: 0.1,
+          scalingRatio: 10,
+        },
+      });
+
+      // Create the node tooltip
+      nodeTooltip = document.createElement("div");
+      nodeTooltip.classList.add("node-tooltip");
+      nodeTooltip.style.display = "none";
+      document.body.appendChild(nodeTooltip);
+
+      // Render the graph
+      renderer = new Sigma(graph, {
+        container: document.getElementById("graph-container"),
+        renderEdgeLabels: false,
+        allowInvalidContainer: true,
+      });
+
+      camera = renderer.getCamera();
+
+      // Set up events
+      renderer.on("enterNode", ({ node }) => {
+        const nodeData = graph.getNodeAttributes(node);
+
+        // Update tooltip
+        nodeTooltip.innerHTML = `
+          <div>
+            <strong>${nodeData.label}</strong>
+            <div class="text-muted">${capitalizeFirstLetter(
+              nodeData.type
+            )}</div>
+          </div>
+        `;
+
+        nodeTooltip.style.display = "block";
+
+        // Highlight node
+        graph.setNodeAttribute(node, "highlighted", true);
+        renderer.refresh();
+      });
+
+      renderer.on("leaveNode", ({ node }) => {
+        nodeTooltip.style.display = "none";
+
+        // Remove highlight
+        graph.setNodeAttribute(node, "highlighted", false);
+        renderer.refresh();
+      });
+
+      renderer.on("mousemoveNode", (e) => {
+        // Position the tooltip near the mouse
+        nodeTooltip.style.left = e.event.x + 10 + "px";
+        nodeTooltip.style.top = e.event.y + 10 + "px";
+      });
+
+      renderer.on("clickNode", ({ node }) => {
+        showNodeDetails(node);
+      });
+
+      // Apply initial filter
+      $("#filter-all").addClass("active");
+      activeFilter = "all";
+      applyFilters();
+    }
+
+    // Apply filters to the graph
+    function applyFilters() {
+      if (!graph) return;
+
+      graph.forEachNode((node, attributes) => {
+        let visible = true;
+
+        // Apply type filter
+        if (activeFilter !== "all" && attributes.type !== activeFilter) {
+          visible = false;
+        }
+
+        // Apply search filter
+        if (
+          searchTerm &&
+          !attributes.label.toLowerCase().includes(searchTerm)
+        ) {
+          visible = false;
+        }
+
+        graph.setNodeAttribute(node, "hidden", !visible);
+
+        // Hide edges connected to hidden nodes
+        graph.forEachEdge(node, (edge, attributes, source, target) => {
+          const sourceHidden = graph.getNodeAttribute(source, "hidden");
+          const targetHidden = graph.getNodeAttribute(target, "hidden");
+          graph.setEdgeAttribute(edge, "hidden", sourceHidden || targetHidden);
+        });
+      });
+
+      renderer.refresh();
+    }
+
+    // Show node details
+    function showNodeDetails(nodeId) {
+      const nodeData = graph.getNodeAttributes(nodeId);
+
+      $("#node-details-content").html(`
+        <div class="text-center py-5">
+          <div class="spinner-border text-${getBootstrapColorByNodeType(
+            nodeData.type
+          )}" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2">Loading details...</p>
+        </div>
+      `);
+
+      $("#nodeDetailsModalLabel").text(nodeData.label);
+      $("#nodeDetailsModal").modal("show");
+
+      // Set up the view button based on node type
+      const viewBtn = $("#view-node-btn");
+
+      switch (nodeData.type) {
+        case "note":
+          viewBtn.attr("href", `/notes?id=${nodeId}`);
+          viewBtn.html(`<i class="fas fa-sticky-note me-1"></i> View Note`);
+          viewBtn.removeClass().addClass("btn btn-primary");
+          break;
+        case "task":
+          viewBtn.attr("href", `/tasks?id=${nodeId}`);
+          viewBtn.html(`<i class="fas fa-tasks me-1"></i> View Task`);
+          viewBtn.removeClass().addClass("btn btn-success");
+          break;
+        case "contact":
+          viewBtn.attr("href", `/contacts?id=${nodeId}`);
+          viewBtn.html(`<i class="fas fa-address-book me-1"></i> View Contact`);
+          viewBtn.removeClass().addClass("btn btn-warning");
+          break;
+        case "document":
+          viewBtn.attr("href", `/documents?id=${nodeId}`);
+          viewBtn.html(`<i class="fas fa-file-alt me-1"></i> View Document`);
+          viewBtn.removeClass().addClass("btn btn-info");
+          break;
+        default:
+          viewBtn.attr("href", "#");
+          viewBtn.html(
+            `<i class="fas fa-external-link-alt me-1"></i> View Details`
+          );
+          viewBtn.removeClass().addClass("btn btn-secondary");
+      }
+
+      // Display node details
+      const data = nodeData.data;
+      let detailsHtml = `<div class="card mb-3">
+        <div class="card-header bg-${getBootstrapColorByNodeType(
+          nodeData.type
+        )} ${nodeData.type === "warning" ? "text-dark" : "text-white"}">
+          <h5 class="mb-0">
+            <i class="${getIconByNodeType(nodeData.type)} me-2"></i>
+            ${nodeData.label}
+          </h5>
+        </div>
+        <div class="card-body">
+          <ul class="list-group list-group-flush">`;
+
+      // Add properties based on node type
+      switch (nodeData.type) {
+        case "note":
+          detailsHtml += `
+            <li class="list-group-item">
+              <strong>Content:</strong> <div class="mt-2">${
+                data.content || "No content"
+              }</div>
+            </li>
+            ${
+              data.tags && data.tags.length
+                ? `
+              <li class="list-group-item">
+                <strong>Tags:</strong> 
+                <div class="mt-2">
+                  ${data.tags
+                    .map(
+                      (tag) =>
+                        `<span class="badge bg-primary me-1">${tag}</span>`
+                    )
+                    .join("")}
+                </div>
+              </li>
+            `
+                : ""
+            }
+            <li class="list-group-item">
+              <strong>Created:</strong> ${formatDate(data.created_at)}
+            </li>
+            <li class="list-group-item">
+              <strong>Updated:</strong> ${formatDate(data.updated_at)}
+            </li>
+          `;
+          break;
+        case "task":
+          detailsHtml += `
+            <li class="list-group-item">
+              <strong>Description:</strong> <div class="mt-2">${
+                data.description || "No description"
+              }</div>
+            </li>
+            <li class="list-group-item">
+              <strong>Status:</strong> 
+              <span class="badge bg-${getTaskStatusColor(data.status)}">${
+            data.status || "Not set"
+          }</span>
+            </li>
+            <li class="list-group-item">
+              <strong>Due Date:</strong> ${
+                data.due_date ? formatDate(data.due_date) : "No due date"
+              }
+            </li>
+            ${
+              data.tags && data.tags.length
+                ? `
+              <li class="list-group-item">
+                <strong>Tags:</strong> 
+                <div class="mt-2">
+                  ${data.tags
+                    .map(
+                      (tag) =>
+                        `<span class="badge bg-success me-1">${tag}</span>`
+                    )
+                    .join("")}
+                </div>
+              </li>
+            `
+                : ""
+            }
+          `;
+          break;
+        case "contact":
+          detailsHtml += `
+            ${
+              data.organization
+                ? `
+              <li class="list-group-item">
+                <strong>Organization:</strong> ${data.organization}
+              </li>
+            `
+                : ""
+            }
+            ${
+              data.role
+                ? `
+              <li class="list-group-item">
+                <strong>Role:</strong> ${data.role}
+              </li>
+            `
+                : ""
+            }
+            ${
+              data.email
+                ? `
+              <li class="list-group-item">
+                <strong>Email:</strong> <a href="mailto:${data.email}">${data.email}</a>
+              </li>
+            `
+                : ""
+            }
+            ${
+              data.phone
+                ? `
+              <li class="list-group-item">
+                <strong>Phone:</strong> <a href="tel:${data.phone}">${data.phone}</a>
+              </li>
+            `
+                : ""
+            }
+            ${
+              data.notes
+                ? `
+              <li class="list-group-item">
+                <strong>Notes:</strong> <div class="mt-2">${data.notes}</div>
+              </li>
+            `
+                : ""
+            }
+          `;
+          break;
+        case "document":
+          detailsHtml += `
+            ${
+              data.description
+                ? `
+              <li class="list-group-item">
+                <strong>Description:</strong> <div class="mt-2">${data.description}</div>
+              </li>
+            `
+                : ""
+            }
+            ${
+              data.category
+                ? `
+              <li class="list-group-item">
+                <strong>Category:</strong> ${data.category}
+              </li>
+            `
+                : ""
+            }
+            ${
+              data.filename
+                ? `
+              <li class="list-group-item">
+                <strong>Filename:</strong> ${data.filename}
+              </li>
+            `
+                : ""
+            }
+            ${
+              data.tags && data.tags.length
+                ? `
+              <li class="list-group-item">
+                <strong>Tags:</strong> 
+                <div class="mt-2">
+                  ${data.tags
+                    .map(
+                      (tag) =>
+                        `<span class="badge bg-info text-dark me-1">${tag}</span>`
+                    )
+                    .join("")}
+                </div>
+              </li>
+            `
+                : ""
+            }
+          `;
+          break;
+        default:
+          // Generic properties
+          for (const [key, value] of Object.entries(data)) {
+            if (key !== "id" && key !== "type" && typeof value !== "object") {
+              detailsHtml += `
+                <li class="list-group-item">
+                  <strong>${capitalizeFirstLetter(key)}:</strong> ${value}
+                </li>
+              `;
+            }
+          }
+      }
+
+      detailsHtml += `</ul></div></div>`;
+
+      // Related nodes section
+      detailsHtml += `<h5>Related Nodes</h5>`;
+
+      // Get connected nodes
+      const connectedNodes = [];
+      graph.forEachNeighbor(nodeId, (neighbor, attributes) => {
+        connectedNodes.push({
+          id: neighbor,
+          label: attributes.label,
+          type: attributes.type,
+        });
+      });
+
+      if (connectedNodes.length > 0) {
+        detailsHtml += `<div class="list-group mb-3">`;
+        connectedNodes.forEach((node) => {
+          detailsHtml += `
+            <a href="#" class="list-group-item list-group-item-action related-node" data-id="${
+              node.id
+            }">
+              <i class="${getIconByNodeType(
+                node.type
+              )} text-${getBootstrapColorByNodeType(node.type)} me-2"></i>
+              ${node.label}
+            </a>
+          `;
+        });
+        detailsHtml += `</div>`;
+      } else {
+        detailsHtml += `<p class="text-muted">No related nodes found.</p>`;
+      }
+
+      $("#node-details-content").html(detailsHtml);
+
+      // Set up related node click handlers
+      $(".related-node").on("click", function (e) {
+        e.preventDefault();
+        const relatedNodeId = $(this).data("id");
+
+        // Close current modal
+        $("#nodeDetailsModal").modal("hide");
+
+        // Show the related node after the modal is hidden
+        $("#nodeDetailsModal").on("hidden.bs.modal", function () {
+          // Unbind the event to prevent multiple calls
+          $("#nodeDetailsModal").off("hidden.bs.modal");
+
+          // Center the graph on the related node
+          const nodePosition = renderer.graphToViewport(
+            graph.getNodeAttribute(relatedNodeId, "x"),
+            graph.getNodeAttribute(relatedNodeId, "y")
+          );
+
+          camera.animate(
+            { x: nodePosition.x, y: nodePosition.y, ratio: 0.5 },
+            { duration: 300 }
+          );
+
+          // Show details for the related node
+          setTimeout(() => {
+            showNodeDetails(relatedNodeId);
+          }, 300);
+        });
+      });
+    }
+
+    // Helper functions
+    function capitalizeFirstLetter(string) {
+      return string.charAt(0).toUpperCase() + string.slice(1);
+    }
+
+    function getBootstrapColorByNodeType(type) {
+      switch (type) {
+        case "note":
+          return "primary";
+        case "task":
+          return "success";
+        case "contact":
+          return "warning";
+        case "document":
+          return "info";
+        default:
+          return "secondary";
+      }
+    }
+
+    function getIconByNodeType(type) {
+      switch (type) {
+        case "note":
+          return "fas fa-sticky-note";
+        case "task":
+          return "fas fa-tasks";
+        case "contact":
+          return "fas fa-user-circle";
+        case "document":
+          return "fas fa-file-alt";
+        default:
+          return "fas fa-circle";
+      }
+    }
+
+    function getTaskStatusColor(status) {
+      if (!status) return "secondary";
+
+      switch (status.toLowerCase()) {
+        case "completed":
+          return "success";
+        case "in_progress":
+          return "primary";
+        case "pending":
+          return "warning";
+        case "cancelled":
+          return "danger";
+        default:
+          return "secondary";
+      }
+    }
+  });
+</script>
+{% endblock %}

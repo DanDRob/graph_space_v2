@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime
 from graph_space_v2.api.middleware.auth import token_required
 from graph_space_v2.api.middleware.validation import validate_json_request, validate_required_fields
+import traceback
 
 contacts_bp = Blueprint('contacts', __name__)
 
@@ -10,11 +11,17 @@ contacts_bp = Blueprint('contacts', __name__)
 @token_required
 def get_contacts():
     try:
+        print("GET /contacts - Retrieving contacts")
         graphspace = current_app.config['GRAPHSPACE']
-        contacts = graphspace.core.services.query_service.get_nodes_by_type(
-            'contact')
+
+        # Get contacts directly from the query service
+        contacts = graphspace.query_service.get_contacts()
+        print(f"Retrieved {len(contacts)} contacts")
+
         return jsonify({'contacts': contacts})
     except Exception as e:
+        print(f"Error getting contacts: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -23,14 +30,15 @@ def get_contacts():
 def get_contact(contact_id):
     try:
         graphspace = current_app.config['GRAPHSPACE']
-        contact = graphspace.core.services.query_service.get_node_by_id(
-            contact_id)
+        contact = graphspace.query_service._get_entity('contact', contact_id)
 
         if not contact or contact.get('type') != 'contact':
             return jsonify({'error': 'Contact not found'}), 404
 
         return jsonify(contact)
     except Exception as e:
+        print(f"Error getting contact {contact_id}: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -50,19 +58,19 @@ def add_contact():
             'role': data.get('role', ''),
             'tags': data.get('tags', []),
             'notes': data.get('notes', ''),
-            'created': datetime.now().isoformat(),
-            'updated': datetime.now().isoformat(),
+            'created_at': data.get('created_at', datetime.now().isoformat()),
+            'updated_at': data.get('updated_at', datetime.now().isoformat()),
             'type': 'contact'
         }
 
         graphspace = current_app.config['GRAPHSPACE']
-        node_id = graphspace.core.graph.node_manager.add_node(contact_data)
+        node_id = graphspace.knowledge_graph.add_contact(contact_data)
 
         # Add relationships if specified
         if 'relationships' in data and isinstance(data['relationships'], list):
             for rel in data['relationships']:
                 if all(k in rel for k in ['target_id', 'relationship_type']):
-                    graphspace.core.graph.relationship.add_relationship(
+                    graphspace.knowledge_graph.add_relationship(
                         node_id,
                         rel['target_id'],
                         rel['relationship_type'],
@@ -71,6 +79,8 @@ def add_contact():
 
         return jsonify({'success': True, 'contact_id': node_id})
     except Exception as e:
+        print(f"Error creating contact: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -82,8 +92,7 @@ def update_contact(contact_id):
         data = request.json
 
         graphspace = current_app.config['GRAPHSPACE']
-        contact = graphspace.core.services.query_service.get_node_by_id(
-            contact_id)
+        contact = graphspace.query_service._get_entity('contact', contact_id)
 
         if not contact or contact.get('type') != 'contact':
             return jsonify({'error': 'Contact not found'}), 404
@@ -95,9 +104,9 @@ def update_contact(contact_id):
 
         updates = {field: data[field]
                    for field in valid_fields if field in data}
-        updates['updated'] = datetime.now().isoformat()
+        updates['updated_at'] = datetime.now().isoformat()
 
-        success = graphspace.core.graph.node_manager.update_node(
+        success = graphspace.knowledge_graph.update_node(
             contact_id, updates)
 
         if not success:
@@ -107,13 +116,13 @@ def update_contact(contact_id):
         if 'relationships' in data and isinstance(data['relationships'], list):
             # First remove existing relationships if specified
             if data.get('replace_relationships', False):
-                graphspace.core.graph.relationship.remove_all_relationships(
+                graphspace.knowledge_graph.remove_all_relationships(
                     contact_id)
 
             # Add new relationships
             for rel in data['relationships']:
                 if all(k in rel for k in ['target_id', 'relationship_type']):
-                    graphspace.core.graph.relationship.add_relationship(
+                    graphspace.knowledge_graph.add_relationship(
                         contact_id,
                         rel['target_id'],
                         rel['relationship_type'],
@@ -122,6 +131,8 @@ def update_contact(contact_id):
 
         return jsonify({'success': True, 'contact_id': contact_id})
     except Exception as e:
+        print(f"Error updating contact {contact_id}: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -131,22 +142,22 @@ def delete_contact(contact_id):
     try:
         graphspace = current_app.config['GRAPHSPACE']
 
-        # First check if contact exists
-        contact = graphspace.core.services.query_service.get_node_by_id(
-            contact_id)
-
+        # First check if the contact exists
+        contact = graphspace.query_service._get_entity('contact', contact_id)
         if not contact or contact.get('type') != 'contact':
             return jsonify({'error': 'Contact not found'}), 404
 
-        # Remove all relationships first
-        graphspace.core.graph.relationship.remove_all_relationships(contact_id)
+        # Remove all relationships for this contact
+        graphspace.knowledge_graph.remove_all_relationships(contact_id)
 
-        # Then remove the node
-        success = graphspace.core.graph.node_manager.remove_node(contact_id)
+        # Delete the contact node
+        success = graphspace.knowledge_graph.delete_node(contact_id)
 
         if not success:
-            return jsonify({'error': 'Failed to delete contact'}), 500
+            return jsonify({'error': 'Contact could not be deleted'}), 500
 
         return jsonify({'success': True})
     except Exception as e:
+        print(f"Error deleting contact {contact_id}: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500

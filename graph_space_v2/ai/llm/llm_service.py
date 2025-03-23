@@ -28,10 +28,10 @@ class LLMService:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "deepseek-ai/deepseek-chat-v1",
+        model_name: str = "deepseek-chat",
         fallback_model_name: str = "meta-llama/Llama-3-8B-Instruct",
         use_api: bool = True,
-        provider: str = "openai"
+        provider: str = "deepseek"
     ):
         """
         Initialize the LLM service.
@@ -314,6 +314,20 @@ class LLMService:
         except Exception as e:
             print(f"Error extracting entities: {e}")
             return {}
+
+    def generate_summary(self, text: str, max_length: int = 200) -> str:
+        """
+        Generate a summary for a document. Alias to summarize_text method
+        for DocumentProcessor compatibility.
+
+        Args:
+            text: Text to summarize
+            max_length: Maximum length of the summary
+
+        Returns:
+            Generated summary
+        """
+        return self.summarize_text(text, max_length)
 
 
 class DummyProvider(BaseLLMProvider):

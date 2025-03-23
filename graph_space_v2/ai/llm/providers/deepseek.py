@@ -15,8 +15,8 @@ class DeepseekProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "deepseek-ai/deepseek-chat-v1",
-        fallback_model_name: str = "deepseek-ai/deepseek-chat-v1-lite",
+        model_name: str = "deepseek-chat",
+        fallback_model_name: str = "deepseek-chat",
         use_api: bool = True,
         base_url: str = "https://api.deepseek.com"
     ):
@@ -37,16 +37,23 @@ class DeepseekProvider(BaseLLMProvider):
         # Get API key from environment if not provided
         if api_key is None:
             api_key = os.environ.get("DEEPSEEK_API_KEY")
+            print(
+                f"Getting DeepSeek API key from environment: {'Found key' if api_key else 'No key found'}")
 
         self.api_key = api_key
+        print(f"DeepSeek API key set: {bool(self.api_key)}")
 
         # Initialize client if API key is available
         if self.api_key and self.use_api:
+            print(f"Initializing DeepSeek client with base_url: {base_url}")
             self.client = OpenAI(
                 api_key=self.api_key,
                 base_url=base_url
             )
+            print(f"DeepSeek client initialized successfully")
         else:
+            print(
+                f"Failed to initialize DeepSeek client. API key: {bool(self.api_key)}, use_api: {use_api}")
             self.client = None
 
     def generate_text(self, prompt: str, max_tokens: int = 500, temperature: float = 0.7) -> str:

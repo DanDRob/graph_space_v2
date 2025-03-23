@@ -63,8 +63,16 @@ class TaskService:
 
         return None
 
-    def get_all_tasks(self) -> List[Task]:
-        return [Task.from_dict(task_data) for task_data in self.knowledge_graph.data.get("tasks", [])]
+    def get_all_tasks(self) -> List[Dict[str, Any]]:
+        """
+        Get all tasks as dictionaries instead of Task objects.
+
+        Returns:
+            List of task dictionaries
+        """
+        return [task.to_dict() for task in
+                [Task.from_dict(task_data) for task_data in
+                 self.knowledge_graph.data.get("tasks", [])]]
 
     def update_task(self, task_id: str, task_data: Dict[str, Any]) -> Optional[Task]:
         # Set the updated_at timestamp

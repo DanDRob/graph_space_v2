@@ -94,8 +94,23 @@
               </li>
             </ul>
             <div class="d-flex">
-              <a href="/settings" class="btn btn-outline-light me-2">
+              <a
+                href="/settings"
+                class="btn btn-outline-light me-2 {% if request.path == '/settings' %}active{% endif %}"
+              >
                 <i class="fas fa-cog me-1"></i> Settings
+              </a>
+              <button
+                id="logout-button"
+                class="btn btn-outline-light d-none auth-required"
+              >
+                <i class="fas fa-sign-out-alt me-1"></i> Logout
+              </button>
+              <a
+                href="/login"
+                class="btn btn-outline-light d-none auth-not-required"
+              >
+                <i class="fas fa-sign-in-alt me-1"></i> Login
               </a>
             </div>
           </div>
@@ -119,6 +134,46 @@
 
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <!-- Authentication Check Script -->
+    <script>
+      // Check authentication state on page load
+      document.addEventListener("DOMContentLoaded", function () {
+        const token = localStorage.getItem("auth_token");
+        const authRequired = document.querySelectorAll(".auth-required");
+        const authNotRequired = document.querySelectorAll(".auth-not-required");
+
+        if (token) {
+          // User is logged in
+          authRequired.forEach((el) => el.classList.remove("d-none"));
+          authNotRequired.forEach((el) => el.classList.add("d-none"));
+
+          // Redirect to login if on login page
+          if (window.location.pathname === "/login") {
+            window.location.href = "/";
+          }
+        } else {
+          // User is not logged in
+          authRequired.forEach((el) => el.classList.add("d-none"));
+          authNotRequired.forEach((el) => el.classList.remove("d-none"));
+
+          // Protect routes that require authentication
+          const protectedRoutes = [
+            "/notes",
+            "/tasks",
+            "/contacts",
+            "/documents",
+            "/graph",
+            "/settings",
+          ];
+          if (protectedRoutes.includes(window.location.pathname)) {
+            // Store the attempted URL to redirect back after login
+            sessionStorage.setItem("redirectUrl", window.location.pathname);
+            window.location.href = "/login";
+          }
+        }
+      });
+    </script>
 
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>

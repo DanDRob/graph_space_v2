@@ -7,6 +7,7 @@ from graph_space_v2.core.models.note import Note
 from graph_space_v2.core.models.task import Task
 from graph_space_v2.core.services.note_service import NoteService
 from graph_space_v2.core.services.task_service import TaskService
+from graph_space_v2.core.services.query_service import QueryService
 from graph_space_v2.utils.config.config_loader import ConfigLoader
 from graph_space_v2.utils.helpers.path_utils import get_user_data_path, get_config_path
 
@@ -50,6 +51,10 @@ class GraphSpace:
         self.config_loader = ConfigLoader(config_path)
         self.config = self.config_loader.load_config()
 
+        # Store parameters
+        self.use_google_drive = use_google_drive
+        self.google_credentials_file = google_credentials_file
+
         # Extract API key from environment if not provided
         if api_key is None and "DEEPSEEK_API_KEY" in os.environ:
             api_key = os.environ["DEEPSEEK_API_KEY"]
@@ -67,30 +72,87 @@ class GraphSpace:
             use_api=use_api
         )
 
-        # Initialize services
+        # Initialize services directly as top-level attributes
         self.note_service = NoteService(
             self.knowledge_graph, self.embedding_service, self.llm_service)
         self.task_service = TaskService(
             self.knowledge_graph, self.embedding_service, self.llm_service)
+        self.query_service = QueryService(
+            self.knowledge_graph, self.embedding_service, self.llm_service)
 
-        # Initialize document processor
+        # For backward compatibility with existing code
+        self.core = type('CoreNamespace', (), {})()
+        self.core.services = type('ServicesNamespace', (), {})()
+        self.core.services.note_service = self.note_service
+        self.core.services.task_service = self.task_service
+        self.core.services.query_service = self.query_service
+
+        # Set up namespace for core.graph for backward compatibility
+        self.core.graph = type('GraphNamespace', (), {})()
+        self.core.graph.knowledge_graph = self.knowledge_graph
+        self.core.graph.node_manager = self.knowledge_graph
+        self.core.graph.relationship = self.knowledge_graph
+
+        # Initialize document processor for importing external content
         self.document_processor = DocumentProcessor(
             llm_service=self.llm_service,
             embedding_service=self.embedding_service,
-            max_workers=self.config["document_processing"]["max_workers"],
-            chunk_size=self.config["document_processing"]["chunk_size"]
+            knowledge_graph=self.knowledge_graph
         )
 
-        # Initialize Google Drive service if enabled
-        self.google_drive_service = None
-        if use_google_drive:
-            self.google_drive_service = GoogleDriveService(
-                credentials_file=google_credentials_file,
-                document_processor=self.document_processor
-            )
+        # Initialize AI components namespace
+        self.ai = type('AINamespace', (), {})()
+        self.ai.embedding = type('EmbeddingNamespace', (), {})()
+        self.ai.embedding.embedding_service = self.embedding_service
+        self.ai.embedding.vector_store = self.embedding_service
+        self.ai.llm = type('LLMNamespace', (), {})()
+        self.ai.llm.llm_service = self.llm_service
+        self.ai.rag = type('RAGNamespace', (), {})()
+        self.ai.rag.query = self.query
+
+        # Initialize integrations namespace
+        self.integrations = type('IntegrationsNamespace', (), {})()
+        self.integrations.document = type('DocumentNamespace', (), {})()
+        self.integrations.document.document_processor = self.document_processor
+
+        # Initialize placeholder for Google services
+        self._google_drive_service = None
+        self._calendar_service = None
 
         # Synchronize components
         self._sync_components()
+
+    @property
+    def google_drive_service(self):
+        """
+        Lazy-loaded GoogleDriveService property.
+
+        Returns:
+            GoogleDriveService instance or None if not enabled
+        """
+        if not self.use_google_drive:
+            return None
+
+        # Return cached instance if available
+        if self._google_drive_service is not None:
+            return self._google_drive_service
+
+        try:
+            # Create GoogleDriveService instance
+            self._google_drive_service = GoogleDriveService(
+                credentials_file=self.google_credentials_file,
+                document_processor=self.document_processor
+            )
+
+            # If web authentication, don't authenticate immediately
+            # The API endpoints will handle authentication for each request
+            self._google_drive_service.auth_required = True
+            self._google_drive_service.authenticated = False
+
+            return self._google_drive_service
+        except Exception as e:
+            print(f"Warning: Failed to initialize Google Drive service: {e}")
+            return None
 
     def _sync_components(self):
         """Synchronize components after initialization."""
@@ -183,17 +245,18 @@ class GraphSpace:
         """Process recurring tasks and create new task instances as needed."""
         return self.task_service.process_recurring_tasks()
 
-    def process_document(self, file_path: str) -> Dict[str, Any]:
+    def process_document(self, file_path: str, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Process a single document file.
 
         Args:
             file_path: Path to the document file
+            metadata: Optional metadata to associate with the document
 
         Returns:
             Dictionary with processing results
         """
-        return self.document_processor.process_single_file(file_path)
+        return self.document_processor.process_single_file(file_path, metadata=metadata)
 
     def process_documents(self, directory: str) -> Dict[str, Any]:
         """
@@ -218,19 +281,50 @@ class GraphSpace:
         Returns:
             Dictionary with query results
         """
-        # Embed the query
-        query_embedding = self.embedding_service.embed_text(query_text)
+        try:
+            print(f"Processing query: {query_text}")
 
-        # Search for similar content
-        results = self.embedding_service.search(query_embedding, max_results)
+            # Ensure the graph is fully built with all connections
+            print("Rebuilding knowledge graph to ensure all connections are present")
+            self.knowledge_graph.build_graph()
 
-        # Generate an answer using LLM
-        context = "\n".join([r["text"] for r in results["matches"]])
-        answer = self.llm_service.generate_answer(query_text, context)
+            # Use the query service for natural language queries
+            result = self.query_service.query_by_natural_language(query_text)
 
-        # Return results
-        return {
-            "query": query_text,
-            "answer": answer,
-            "sources": results["matches"]
-        }
+            # If there's an error in the query service, fall back to basic search
+            if "error" in result:
+                print(f"Error in query service: {result['error']}")
+                print("Falling back to basic embedding search")
+
+                # Embed the query
+                query_embedding = self.embedding_service.embed_text(query_text)
+
+                # Search for similar content
+                results = self.embedding_service.search(
+                    query_embedding, max_results)
+
+                # Generate an answer using LLM
+                context = "\n".join([r.get("text", "")
+                                    for r in results.get("matches", [])])
+
+                print(
+                    f"Generating answer with {len(results.get('matches', []))} context items")
+                answer = self.llm_service.generate_answer(query_text, context)
+
+                return {
+                    "query": query_text,
+                    "answer": answer,
+                    "sources": results.get("matches", [])
+                }
+
+            return result
+        except Exception as e:
+            print(f"Error in query: {e}")
+            import traceback
+            traceback.print_exc()
+            # Return a simple error response
+            return {
+                "query": query_text,
+                "error": str(e),
+                "sources": []
+            }

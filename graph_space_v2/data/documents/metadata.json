@@ -1,0 +1,24 @@
+{
+  "message1.txt": {
+    "title": "message1",
+    "file_path": "c:\\Users\\Daniel Roberts\\Downloads\\graph_space\\graph_space_v2\\data\\uploads\\message1.txt",
+    "file_type": "text",
+    "processed_at": "2025-03-23T05:35:27.390995",
+    "content_length": 9952,
+    "chunks": 1,
+    "topics": [
+      "rapid inspiration capture",
+      "AI-enhanced note summarization",
+      "efficient note management",
+      "RAG",
+      "GNN"
+    ],
+    "tags": [
+      "rapid inspiration capture",
+      "AI-enhanced note summarization",
+      "efficient note management",
+      "RAG",
+      "GNN"
+    ]
+  }
+}

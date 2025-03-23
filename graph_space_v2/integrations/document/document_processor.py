@@ -17,12 +17,14 @@ class DocumentProcessor:
         self,
         llm_service: Optional[LLMService] = None,
         embedding_service: Optional[EmbeddingService] = None,
+        knowledge_graph: Optional[Any] = None,
         max_workers: int = 4,
         chunk_size: int = 500,
         storage_dir: Optional[str] = None
     ):
         self.llm_service = llm_service
         self.embedding_service = embedding_service
+        self.knowledge_graph = knowledge_graph
         self.max_workers = max_workers
         self.chunk_size = chunk_size
 
@@ -60,46 +62,75 @@ class DocumentProcessor:
         except Exception as e:
             print(f"Error saving document metadata: {e}")
 
-    def process_single_file(self, file_path: str) -> Dict[str, Any]:
+    def process_single_file(self, file_path: str, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Process a single document file.
 
         Args:
             file_path: Path to the file to process
+            metadata: Optional metadata to associate with the document
 
         Returns:
             Dictionary with processing results
         """
         try:
+            print(f"Processing document: {file_path}")
             # Extract text and metadata using appropriate extractor
             doc_info = ExtractorFactory.extract_from_file(file_path)
 
+            # Add additional metadata if provided
+            if metadata:
+                doc_info.metadata.update(metadata)
+
             # Use LLM to enhance document metadata if available
+            summary = ""
+            topics = []
+            entities = {}
+
             if self.llm_service:
                 # Generate a summary
+                print(f"Calling LLM to generate_summary...")
                 summary = self.llm_service.generate_summary(doc_info.content)
+                print(f"Summary generated: {summary[:50]}...")
 
                 # Extract topics/tags
+                print(f"Calling LLM to extract_tags...")
                 topics = self.llm_service.extract_tags(doc_info.content)
+                print(f"Tags extracted: {topics}")
 
                 # Extract named entities
+                print(f"Calling LLM to extract_entities...")
                 entities = self.llm_service.extract_entities(doc_info.content)
-            else:
-                summary = ""
-                topics = []
-                entities = {}
+                print(
+                    f"Entities extracted: {list(entities.keys()) if entities else 'None'}")
+
+            # Convert topics to list if it's not already
+            if not isinstance(topics, list):
+                if isinstance(topics, str):
+                    topics = [t.strip() for t in topics.split(",")]
+                else:
+                    topics = []
+
+            # Ensure we have at least some basic tags if none were extracted
+            if not topics and doc_info.title:
+                # Split title into words and use as basic tags
+                words = doc_info.title.lower().split()
+                # Use up to 3 longer words
+                topics = [w for w in words if len(w) > 3][:3]
+                print(
+                    f"No topics found, using basic tags from title: {topics}")
 
             # Create embeddings if embedding service is available
+            chunk_embeddings = []
             if self.embedding_service and doc_info.content:
                 # Process content in chunks if it's too large
                 chunks = self._chunk_text(doc_info.content, self.chunk_size)
-                chunk_embeddings = []
 
                 for i, chunk in enumerate(chunks):
                     embedding = self.embedding_service.embed_text(chunk)
                     chunk_id = f"{os.path.basename(file_path)}_chunk_{i}"
 
-                    # Store the embedding
+                    # Store the embedding with metadata including tags
                     self.embedding_service.store_embedding(
                         chunk_id,
                         embedding,
@@ -108,7 +139,8 @@ class DocumentProcessor:
                             "document_id": os.path.basename(file_path),
                             "chunk_index": i,
                             "content": chunk,
-                            "title": doc_info.title
+                            "title": doc_info.title,
+                            "tags": topics  # Include tags with chunk for better retrieval
                         }
                     )
 
@@ -116,23 +148,26 @@ class DocumentProcessor:
                         "chunk_id": chunk_id,
                         "chunk_index": i
                     })
-            else:
-                chunk_embeddings = []
+                print(f"Created {len(chunks)} chunk embeddings for document")
 
             # Store processing results
             result = {
+                "id": os.path.basename(file_path),
                 "file_path": file_path,
                 "file_name": os.path.basename(file_path),
                 "title": doc_info.title,
+                "content": doc_info.content,
                 "content_length": len(doc_info.content),
                 "metadata": doc_info.metadata,
                 "file_type": doc_info.file_type,
                 "summary": summary,
                 "topics": topics,
+                "tags": topics,  # Duplicate topics as tags for consistency
                 "entities": entities,
                 "processed_at": datetime.now().isoformat(),
                 "chunks": len(chunk_embeddings),
-                "chunk_embeddings": chunk_embeddings
+                "chunk_embeddings": chunk_embeddings,
+                "type": "document"  # Add type for consistency with other entities
             }
 
             # Update metadata
@@ -144,9 +179,21 @@ class DocumentProcessor:
                     "processed_at": result["processed_at"],
                     "content_length": len(doc_info.content),
                     "chunks": len(chunk_embeddings),
-                    "topics": topics
+                    "topics": topics,
+                    "tags": topics  # Include tags here too
                 }
                 self._save_metadata()
+
+            # Add document to knowledge graph if available
+            if self.knowledge_graph:
+                print(
+                    f"Adding document to knowledge graph: {result['id']} with tags: {topics}")
+                doc_id = self.knowledge_graph.add_document(result)
+                print(f"Document added to knowledge graph with ID: {doc_id}")
+
+                # Force graph rebuild to ensure connections are made
+                print("Rebuilding knowledge graph connections...")
+                self.knowledge_graph.build_graph()
 
             return result
 

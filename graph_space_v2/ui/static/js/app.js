@@ -22,16 +22,23 @@ $(document).ready(function () {
     return new bootstrap.Popover(popoverTriggerEl);
   });
 
+  // Add auth token to all AJAX requests
+  const token = localStorage.getItem("auth_token");
+
   // Global AJAX setup
   $.ajaxSetup({
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      // Authentication disabled for hackathon
+      // Authorization: token ? `Bearer ${token}` : null,
     },
     error: function (xhr, status, error) {
       if (xhr.status === 401) {
-        // Unauthorized - redirect to login
-        window.location.href = "/login";
+        // Unauthorized - but don't redirect for hackathon
+        console.error(
+          "Authentication error, but continuing anyway for hackathon"
+        );
       } else if (xhr.status === 404) {
         console.error("Resource not found:", error);
       } else if (xhr.status >= 500) {
@@ -46,6 +53,19 @@ $(document).ready(function () {
         }
       }
     },
+  });
+
+  // Add logout functionality to navbar if present
+  $("#logout-button").on("click", function (e) {
+    e.preventDefault();
+    if (typeof window.logout === "function") {
+      window.logout();
+    } else {
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("user");
+      sessionStorage.removeItem("user");
+      window.location.href = "/login";
+    }
   });
 
   // Format dates with the time ago format

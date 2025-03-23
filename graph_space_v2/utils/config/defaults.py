@@ -32,7 +32,7 @@ DEFAULT_CONFIG = {
         "api_enabled": True,
         "provider": "deepseek",
         "api_base_url": "https://api.deepseek.com/v1",
-        "model": "deepseek-ai/deepseek-chat-v1",
+        "model": "deepseek-chat",
         "fallback_provider": "meta",
         "fallback_model": "meta-llama/Llama-3-8B-Instruct",
         "temperature": 0.7,

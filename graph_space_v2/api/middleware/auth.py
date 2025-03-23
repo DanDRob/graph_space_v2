@@ -13,26 +13,7 @@ PUBLIC_ENDPOINTS = [
 
 
 def jwt_middleware():
-    if request.path in PUBLIC_ENDPOINTS:
-        return None
-
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        # For development, allow requests without tokens
-        # In production, you'd return a 401 here
-        return None
-
-    token = auth_header.split(' ')[1]
-    try:
-        # In production, use a proper secret key from environment variables
-        SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'development_secret_key')
-        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        request.user = payload
-    except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token expired"}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid token"}), 401
-
+    # Disabled for hackathon - no authentication required
     return None
 
 
@@ -49,7 +30,6 @@ def generate_token(user_id, username, expiration_days=7):
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not hasattr(request, 'user'):
-            return jsonify({"error": "Authentication required"}), 401
+        # Authentication disabled for hackathon
         return f(*args, **kwargs)
     return decorated

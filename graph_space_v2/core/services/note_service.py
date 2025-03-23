@@ -1,6 +1,7 @@
 from typing import Dict, List, Any, Optional, Set, Union
 from datetime import datetime
 import uuid
+import traceback
 
 from graph_space_v2.core.models.note import Note
 from graph_space_v2.core.graph.knowledge_graph import KnowledgeGraph
@@ -91,14 +92,35 @@ class NoteService:
 
         return None
 
-    def get_all_notes(self) -> List[Note]:
+    def get_all_notes(self) -> List[Dict[str, Any]]:
         """
         Get all notes.
 
         Returns:
-            List of Note instances
+            List of note dictionaries
         """
-        return [Note.from_dict(note_data) for note_data in self.knowledge_graph.data.get("notes", [])]
+        try:
+            # For troubleshooting, let's first check the knowledge graph data structure
+            print(f"Knowledge graph data: {self.knowledge_graph.data}")
+
+            # Check if notes array exists in data
+            if "notes" not in self.knowledge_graph.data:
+                print(
+                    "Notes array not found in knowledge graph data, initializing empty list")
+                self.knowledge_graph.data["notes"] = []
+
+            # Get raw notes from knowledge graph
+            raw_notes = self.knowledge_graph.data.get("notes", [])
+            print(f"Found {len(raw_notes)} raw notes in knowledge graph")
+
+            # Return raw note data as dictionaries instead of converting to Note objects
+            # This avoids potential serialization issues with Note objects
+            return raw_notes
+        except Exception as e:
+            print(f"Error in get_all_notes: {e}")
+            traceback.print_exc()
+            # Return empty list instead of raising exception
+            return []
 
     def update_note(self, note_id: str, note_data: Dict[str, Any]) -> Optional[Note]:
         """

@@ -48,7 +48,14 @@ class GoogleDriveService:
 
         self.creds = None
         self.service = None
-        self._authenticate()
+
+        # Controls whether to authenticate immediately or defer
+        self.auth_required = False
+        self.authenticated = False
+
+        # Only authenticate immediately if auth is not deferred
+        if not self.auth_required:
+            self._authenticate()
 
     def _authenticate(self) -> None:
         """Authenticate with Google Drive API"""
@@ -56,11 +63,30 @@ class GoogleDriveService:
             # Get credentials from the auth manager
             self.creds = self.auth.get_credentials()
 
+            if not self.creds:
+                if self.auth_required:
+                    # Just mark as not authenticated, don't raise exception
+                    self.authenticated = False
+                    return
+                else:
+                    raise ValueError("No valid credentials found")
+
             # Build the service
             from googleapiclient.discovery import build
             self.service = build('drive', 'v3', credentials=self.creds)
+            self.authenticated = True
         except Exception as e:
-            raise ValueError(f"Failed to authenticate with Google Drive: {e}")
+            self.authenticated = False
+            if not self.auth_required:
+                raise ValueError(
+                    f"Failed to authenticate with Google Drive: {e}")
+            print(f"Warning: Failed to authenticate with Google Drive: {e}")
+
+    def _ensure_authenticated(self) -> bool:
+        """Ensure service is authenticated before making API calls"""
+        if not self.authenticated or not self.service:
+            self._authenticate()
+        return self.authenticated
 
     def list_files(
         self,
@@ -81,6 +107,9 @@ class GoogleDriveService:
         Returns:
             List of file metadata
         """
+        if not self._ensure_authenticated():
+            raise ValueError("Not authenticated with Google Drive")
+
         # Build query string
         query_parts = []
 
@@ -136,6 +165,9 @@ class GoogleDriveService:
         Returns:
             The file content as bytes
         """
+        if not self._ensure_authenticated():
+            raise ValueError("Not authenticated with Google Drive")
+
         # Get the file metadata
         file_metadata = self.service.files().get(fileId=file_id).execute()
 
@@ -149,40 +181,93 @@ class GoogleDriveService:
 
         # For regular files, we can download directly
         request = self.service.files().get_media(fileId=file_id)
-        file_bytes = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_bytes, request)
+        file_content = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_content, request)
 
         done = False
         while not done:
-            _, done = downloader.next_chunk()
+            status, done = downloader.next_chunk()
 
-        return file_bytes.getvalue()
+        return file_content.getvalue()
 
     def _export_google_doc(self, file_id: str, mime_type: str) -> bytes:
-        """Export a Google Docs/Sheets/Slides file to a standard format"""
-        export_mime_type = None
+        """
+        Export a Google Doc/Sheet/Slide to a standard format.
 
-        # Determine export format based on the file type
+        Args:
+            file_id: ID of the file to export
+            mime_type: MIME type of the file
+
+        Returns:
+            The file content as bytes
+        """
+        # Choose export format based on file type
+        export_mime_type = 'application/pdf'  # Default to PDF
         if mime_type == 'application/vnd.google-apps.document':
             export_mime_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'  # DOCX
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
             export_mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'  # XLSX
         elif mime_type == 'application/vnd.google-apps.presentation':
             export_mime_type = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'  # PPTX
-        else:
-            raise ValueError(f"Unsupported Google Apps mime type: {mime_type}")
 
         # Export the file
         request = self.service.files().export_media(
             fileId=file_id, mimeType=export_mime_type)
-        file_bytes = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_bytes, request)
+        file_content = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_content, request)
 
         done = False
         while not done:
-            _, done = downloader.next_chunk()
+            status, done = downloader.next_chunk()
 
-        return file_bytes.getvalue()
+        return file_content.getvalue()
+
+    def import_document(self, file_id: str) -> str:
+        """
+        Import a document from Google Drive into the knowledge graph.
+
+        Args:
+            file_id: ID of the file to import
+
+        Returns:
+            ID of the imported document
+        """
+        if not self._ensure_authenticated():
+            raise ValueError("Not authenticated with Google Drive")
+
+        if not self.document_processor:
+            raise ValueError("Document processor not initialized")
+
+        # Get file metadata
+        file_metadata = self.service.files().get(
+            fileId=file_id, fields="name,mimeType").execute()
+        file_name = file_metadata.get('name', 'untitled')
+        mime_type = file_metadata.get('mimeType', 'application/octet-stream')
+
+        # Download file content
+        content = self.download_file(file_id)
+
+        # Process the document
+        document_id = self.document_processor.process_document(
+            content=content,
+            filename=file_name,
+            mime_type=mime_type
+        )
+
+        return document_id
+
+    def set_credentials(self, credentials):
+        """
+        Set credentials for use with web-based authentication flow.
+
+        Args:
+            credentials: OAuth2 credentials from web auth flow
+        """
+        self.creds = credentials
+        # Rebuild the service with the new credentials
+        from googleapiclient.discovery import build
+        self.service = build('drive', 'v3', credentials=self.creds)
+        self.authenticated = True
 
     def process_file(self, file_id: str) -> Dict[str, Any]:
         """

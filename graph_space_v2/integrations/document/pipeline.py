@@ -153,6 +153,7 @@ class DocumentPipeline:
             "tags": doc_result.get("topics", []) + ["document", "imported"],
             "source": {
                 "type": "document",
+                "document_id": doc_result["id"],
                 "file_path": doc_result["file_path"]
             },
             "created_at": datetime.now().isoformat(),
@@ -161,7 +162,32 @@ class DocumentPipeline:
 
         # Add to knowledge graph
         try:
+            print(f"Creating note from document: {doc_result['title']}")
             note_id = self.knowledge_graph.add_note(note_data)
+
+            # Create explicit relationship between document and note
+            doc_node_id = doc_result["id"]
+            print(
+                f"Creating explicit relationship between document {doc_node_id} and note {note_id}")
+
+            # Create bidirectional relationships
+            self.knowledge_graph.add_relationship(
+                doc_node_id,
+                note_id,
+                "has_note",
+                {"weight": 1.0, "created_at": datetime.now().isoformat()}
+            )
+
+            self.knowledge_graph.add_relationship(
+                note_id,
+                doc_node_id,
+                "from_document",
+                {"weight": 1.0, "created_at": datetime.now().isoformat()}
+            )
+
+            # Force rebuilding the graph to include new relationships
+            self.knowledge_graph.build_graph()
+
             return note_id
         except Exception as e:
             print(f"Error creating note from document: {e}")

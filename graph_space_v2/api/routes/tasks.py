@@ -1,39 +1,40 @@
 from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime
-from graph_space_v2.api.middleware.auth import token_required
+import traceback
 from graph_space_v2.api.middleware.validation import validate_json_request, validate_required_fields
 
 tasks_bp = Blueprint('tasks', __name__)
 
 
 @tasks_bp.route('/tasks', methods=['GET'])
-@token_required
 def get_tasks():
     try:
         graphspace = current_app.config['GRAPHSPACE']
-        tasks = graphspace.core.services.task_service.get_all_tasks()
+        tasks = graphspace.task_service.get_all_tasks()
         return jsonify({'tasks': tasks})
     except Exception as e:
+        print(f"Error getting tasks: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
 @tasks_bp.route('/tasks/<task_id>', methods=['GET'])
-@token_required
 def get_task(task_id):
     try:
         graphspace = current_app.config['GRAPHSPACE']
-        task = graphspace.core.services.task_service.get_task(task_id)
+        task = graphspace.task_service.get_task(task_id)
 
         if not task:
             return jsonify({'error': 'Task not found'}), 404
 
         return jsonify(task)
     except Exception as e:
+        print(f"Error getting task {task_id}: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
 @tasks_bp.route('/tasks', methods=['POST'])
-@token_required
 @validate_json_request
 @validate_required_fields('title')
 def add_task():
@@ -65,26 +66,31 @@ def add_task():
             # Calendar integration
             'calendar_sync': data.get('calendar_sync', False),
             'calendar_id': data.get('calendar_id', ''),
-            'calendar_provider': data.get('calendar_provider', '')
+            'calendar_provider': data.get('calendar_provider', ''),
+
+            # Timestamps
+            'created_at': data.get('created_at', datetime.now().isoformat()),
+            'updated_at': data.get('updated_at', datetime.now().isoformat())
         }
 
         graphspace = current_app.config['GRAPHSPACE']
-        task_id = graphspace.core.services.task_service.add_task(task_data)
+        task_id = graphspace.task_service.add_task(task_data)
 
         return jsonify({'success': True, 'task_id': task_id})
     except Exception as e:
+        print(f"Error creating task: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
 @tasks_bp.route('/tasks/<task_id>', methods=['PUT'])
-@token_required
 @validate_json_request
 def update_task(task_id):
     try:
         data = request.json
 
         graphspace = current_app.config['GRAPHSPACE']
-        task = graphspace.core.services.task_service.get_task(task_id)
+        task = graphspace.task_service.get_task(task_id)
 
         if not task:
             return jsonify({'error': 'Task not found'}), 404
@@ -106,10 +112,10 @@ def update_task(task_id):
                 task_data[field] = data[field]
 
         # Mark as updated
-        task_data['updated'] = datetime.now().isoformat()
+        task_data['updated_at'] = datetime.now().isoformat()
 
         # Update in service
-        success = graphspace.core.services.task_service.update_task(
+        success = graphspace.task_service.update_task(
             task_id, task_data)
 
         if not success:
@@ -117,30 +123,32 @@ def update_task(task_id):
 
         return jsonify({'success': True, 'task_id': task_id})
     except Exception as e:
+        print(f"Error updating task {task_id}: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
 @tasks_bp.route('/tasks/<task_id>', methods=['DELETE'])
-@token_required
 def delete_task(task_id):
     try:
         graphspace = current_app.config['GRAPHSPACE']
-        success = graphspace.core.services.task_service.delete_task(task_id)
+        success = graphspace.task_service.delete_task(task_id)
 
         if not success:
             return jsonify({'error': 'Task not found or could not be deleted'}), 404
 
         return jsonify({'success': True})
     except Exception as e:
+        print(f"Error deleting task {task_id}: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
 @tasks_bp.route('/tasks/process_recurring', methods=['POST'])
-@token_required
 def process_recurring_tasks():
     try:
         graphspace = current_app.config['GRAPHSPACE']
-        results = graphspace.core.services.task_service.process_recurring_tasks()
+        results = graphspace.task_service.process_recurring_tasks()
 
         return jsonify({
             'success': True,
@@ -148,4 +156,6 @@ def process_recurring_tasks():
             'created': results.get('created', 0)
         })
     except Exception as e:
+        print(f"Error processing recurring tasks: {e}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500

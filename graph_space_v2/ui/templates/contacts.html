@@ -1,0 +1,739 @@
+{% extends 'base.html' %} {% block title %}Contacts - GraphSpace{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1><i class="fas fa-address-book text-warning me-2"></i> Contacts</h1>
+  <button
+    id="add-contact-btn"
+    class="btn btn-warning"
+    data-bs-toggle="modal"
+    data-bs-target="#contactModal"
+  >
+    <i class="fas fa-plus me-1"></i> Add Contact
+  </button>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-8">
+    <div class="input-group">
+      <span class="input-group-text"><i class="fas fa-search"></i></span>
+      <input
+        type="text"
+        id="search-contacts"
+        class="form-control"
+        placeholder="Search contacts by name, email, or organization..."
+      />
+    </div>
+  </div>
+  <div class="col-md-4">
+    <select id="filter-organization" class="form-select">
+      <option value="">Filter by organization</option>
+      <!-- Organizations will be loaded dynamically -->
+    </select>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body p-0">
+    <div id="contacts-container" class="list-group list-group-flush">
+      <!-- Contacts will be loaded dynamically -->
+      <div class="list-group-item text-center py-5" id="contacts-loading">
+        <div class="spinner-border text-warning" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading contacts...</p>
+      </div>
+      <div class="list-group-item text-center py-5 d-none" id="contacts-empty">
+        <i class="fas fa-address-book text-muted fa-3x mb-3"></i>
+        <h5>No contacts found</h5>
+        <p>Add your first contact to get started!</p>
+        <button
+          class="btn btn-warning"
+          data-bs-toggle="modal"
+          data-bs-target="#contactModal"
+        >
+          <i class="fas fa-plus me-1"></i> Add Contact
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pagination -->
+<nav aria-label="Contacts pagination" class="d-flex justify-content-center">
+  <ul class="pagination" id="contacts-pagination">
+    <!-- Pagination will be added dynamically -->
+  </ul>
+</nav>
+
+<!-- Contact Modal -->
+<div
+  class="modal fade"
+  id="contactModal"
+  tabindex="-1"
+  aria-labelledby="contactModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="contactModalLabel">Add New Contact</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <form id="contact-form">
+          <input type="hidden" id="contact-id" />
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="contact-name" class="form-label">Name</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="contact-name"
+                  placeholder="Full Name"
+                  required
+                />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="contact-email" class="form-label">Email</label>
+                <input
+                  type="email"
+                  class="form-control"
+                  id="contact-email"
+                  placeholder="Email Address"
+                />
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="contact-phone" class="form-label">Phone</label>
+                <input
+                  type="tel"
+                  class="form-control"
+                  id="contact-phone"
+                  placeholder="Phone Number"
+                />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="contact-organization" class="form-label"
+                  >Organization</label
+                >
+                <input
+                  type="text"
+                  class="form-control"
+                  id="contact-organization"
+                  placeholder="Company or Organization"
+                />
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="contact-role" class="form-label">Role</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="contact-role"
+                  placeholder="Job Title or Role"
+                />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="contact-tags" class="form-label">Tags</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="contact-tags"
+                  placeholder="Enter tags separated by commas"
+                />
+              </div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label for="contact-notes" class="form-label">Notes</label>
+            <textarea
+              class="form-control"
+              id="contact-notes"
+              rows="3"
+              placeholder="Additional notes about this contact"
+            ></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button type="button" id="save-contact-btn" class="btn btn-warning">
+          <i class="fas fa-save me-1"></i> Save Contact
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Contact View Modal -->
+<div
+  class="modal fade"
+  id="contactViewModal"
+  tabindex="-1"
+  aria-labelledby="contactViewModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="contactViewModalLabel">Contact Details</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <div id="contact-view-content">
+          <div class="text-center py-5">
+            <div class="spinner-border text-warning" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading contact...</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Close
+        </button>
+        <button type="button" id="edit-contact-btn" class="btn btn-warning">
+          <i class="fas fa-edit me-1"></i> Edit
+        </button>
+        <button type="button" id="delete-contact-btn" class="btn btn-danger">
+          <i class="fas fa-trash me-1"></i> Delete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div
+  class="modal fade"
+  id="deleteConfirmModal"
+  tabindex="-1"
+  aria-labelledby="deleteConfirmModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteConfirmModalLabel">
+          Confirm Deletion
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Are you sure you want to delete this contact? This action cannot be
+          undone.
+        </p>
+        <p id="delete-contact-name" class="fw-bold"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button type="button" id="confirm-delete-btn" class="btn btn-danger">
+          <i class="fas fa-trash me-1"></i> Delete Permanently
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<script>
+  $(document).ready(function () {
+    loadContacts();
+
+    // Handle contact search
+    $("#search-contacts").on("input", function () {
+      loadContacts();
+    });
+
+    // Handle organization filter
+    $("#filter-organization").on("change", function () {
+      loadContacts();
+    });
+
+    // Initialize contact form
+    $("#add-contact-btn").on("click", function () {
+      resetContactForm();
+      $("#contactModalLabel").text("Add New Contact");
+      $("#contact-id").val("");
+    });
+
+    // Save contact
+    $("#save-contact-btn").on("click", function () {
+      saveContact();
+    });
+
+    // Edit contact
+    $("#edit-contact-btn").on("click", function () {
+      const contactId = $(this).data("id");
+      editContact(contactId);
+    });
+
+    // Delete contact
+    $("#confirm-delete-btn").on("click", function () {
+      deleteContact();
+    });
+  });
+
+  // Load contacts from API
+  function loadContacts() {
+    const searchQuery = $("#search-contacts").val();
+    const organizationFilter = $("#filter-organization").val();
+
+    $("#contacts-loading").removeClass("d-none");
+    $("#contacts-empty").addClass("d-none");
+
+    // Clear existing contacts except loading and empty states
+    $("#contacts-container")
+      .children()
+      .not("#contacts-loading, #contacts-empty")
+      .remove();
+
+    $.ajax({
+      url: "/api/contacts",
+      method: "GET",
+      success: function (response) {
+        $("#contacts-loading").addClass("d-none");
+
+        // Filter contacts if search query exists
+        let contacts = response.contacts || [];
+
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          contacts = contacts.filter(
+            (contact) =>
+              (contact.name && contact.name.toLowerCase().includes(query)) ||
+              (contact.email && contact.email.toLowerCase().includes(query)) ||
+              (contact.organization &&
+                contact.organization.toLowerCase().includes(query))
+          );
+        }
+
+        if (organizationFilter) {
+          contacts = contacts.filter(
+            (contact) =>
+              contact.organization &&
+              contact.organization.toLowerCase() ===
+                organizationFilter.toLowerCase()
+          );
+        }
+
+        // Display contacts or show empty state
+        if (contacts.length === 0) {
+          $("#contacts-empty").removeClass("d-none");
+        } else {
+          renderContacts(contacts);
+
+          // Load unique organizations for filter
+          const organizations = [
+            ...new Set(
+              contacts.map((contact) => contact.organization).filter(Boolean)
+            ),
+          ];
+
+          renderOrganizationFilter(organizations);
+        }
+      },
+      error: function (xhr, status, error) {
+        $("#contacts-loading").addClass("d-none");
+        $("#contacts-empty").removeClass("d-none");
+        console.error("Error loading contacts:", error);
+      },
+    });
+  }
+
+  // Render contacts to the container
+  function renderContacts(contacts) {
+    contacts.forEach((contact) => {
+      const contactItem = `
+        <div class="list-group-item contact-item" data-id="${contact.id}">
+          <div class="d-flex w-100 justify-content-between align-items-center">
+            <h5 class="mb-1">
+              <i class="fas fa-user-circle text-warning me-2"></i>
+              ${contact.name || "Unnamed Contact"}
+            </h5>
+            <small class="text-muted">${contact.organization || ""}</small>
+          </div>
+          <div class="mb-1">
+            ${
+              contact.email
+                ? `<span class="me-3"><i class="fas fa-envelope me-1"></i> ${contact.email}</span>`
+                : ""
+            }
+            ${
+              contact.phone
+                ? `<span><i class="fas fa-phone me-1"></i> ${contact.phone}</span>`
+                : ""
+            }
+          </div>
+          <div class="d-flex justify-content-between align-items-center mt-2">
+            <div>
+              ${
+                contact.role
+                  ? `<span class="badge bg-secondary me-1">${contact.role}</span>`
+                  : ""
+              }
+              ${(contact.tags || [])
+                .map(
+                  (tag) =>
+                    `<span class="badge bg-warning text-dark me-1">${tag}</span>`
+                )
+                .join("")}
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-sm btn-outline-warning view-contact" data-id="${
+                contact.id
+              }">
+                <i class="fas fa-eye"></i> View
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      $("#contacts-container").append(contactItem);
+    });
+
+    // Add click handlers for view buttons
+    $(".view-contact").on("click", function () {
+      const contactId = $(this).data("id");
+      viewContact(contactId);
+    });
+  }
+
+  // Render organization filter options
+  function renderOrganizationFilter(organizations) {
+    const select = $("#filter-organization");
+    const currentValue = select.val();
+
+    // Keep the first option and remove the rest
+    select.find("option:not(:first)").remove();
+
+    // Add new options
+    organizations.forEach((org) => {
+      select.append(`<option value="${org}">${org}</option>`);
+    });
+
+    // Restore selected value if it exists in the new options
+    if (currentValue && organizations.includes(currentValue)) {
+      select.val(currentValue);
+    }
+  }
+
+  // View contact details
+  function viewContact(contactId) {
+    $("#contact-view-content").html(`
+      <div class="text-center py-5">
+        <div class="spinner-border text-warning" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading contact details...</p>
+      </div>
+    `);
+
+    $("#edit-contact-btn").data("id", contactId);
+    $("#delete-contact-btn").data("id", contactId);
+
+    $.ajax({
+      url: `/api/contacts/${contactId}`,
+      method: "GET",
+      success: function (contact) {
+        const content = `
+          <div class="row">
+            <div class="col-md-6">
+              <h4>${contact.name || "Unnamed Contact"}</h4>
+              ${contact.role ? `<p class="text-muted">${contact.role}</p>` : ""}
+              
+              <div class="mb-3">
+                ${(contact.tags || [])
+                  .map(
+                    (tag) =>
+                      `<span class="badge bg-warning text-dark me-1">${tag}</span>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+            <div class="col-md-6 text-md-end">
+              ${
+                contact.organization
+                  ? `<p class="mb-1"><strong>Organization:</strong> ${contact.organization}</p>`
+                  : ""
+              }
+              ${
+                contact.email
+                  ? `<p class="mb-1"><strong>Email:</strong> <a href="mailto:${contact.email}">${contact.email}</a></p>`
+                  : ""
+              }
+              ${
+                contact.phone
+                  ? `<p class="mb-1"><strong>Phone:</strong> <a href="tel:${contact.phone}">${contact.phone}</a></p>`
+                  : ""
+              }
+            </div>
+          </div>
+          
+          ${
+            contact.notes
+              ? `
+            <div class="mt-3">
+              <h5>Notes</h5>
+              <div class="card">
+                <div class="card-body bg-light">
+                  ${contact.notes}
+                </div>
+              </div>
+            </div>
+          `
+              : ""
+          }
+          
+          <div class="mt-3">
+            <p class="text-muted small">
+              Created: ${formatDate(contact.created_at, true)}
+              ${
+                contact.updated_at && contact.updated_at !== contact.created_at
+                  ? ` | Updated: ${formatDate(contact.updated_at, true)}`
+                  : ""
+              }
+            </p>
+          </div>
+        `;
+
+        $("#contact-view-content").html(content);
+        $("#contactViewModalLabel").text(contact.name || "Contact Details");
+        $("#contactViewModal").modal("show");
+
+        // Set up delete button
+        $("#delete-contact-btn")
+          .off("click")
+          .on("click", function () {
+            const contactId = $(this).data("id");
+            $("#delete-contact-name").text(contact.name || "Unnamed Contact");
+            $("#confirm-delete-btn").data("id", contactId);
+            $("#contactViewModal").modal("hide");
+            $("#deleteConfirmModal").modal("show");
+          });
+      },
+      error: function (xhr, status, error) {
+        $("#contact-view-content").html(`
+          <div class="alert alert-danger">
+            Error loading contact details. Please try again.
+          </div>
+        `);
+        console.error("Error viewing contact:", error);
+      },
+    });
+  }
+
+  // Edit contact
+  function editContact(contactId) {
+    // Close view modal
+    $("#contactViewModal").modal("hide");
+
+    // Reset form and show loading state
+    resetContactForm();
+    $("#contactModalLabel").text("Edit Contact");
+    $("#contact-id").val(contactId);
+
+    // Get contact data
+    $.ajax({
+      url: `/api/contacts/${contactId}`,
+      method: "GET",
+      success: function (contact) {
+        // Populate form fields
+        $("#contact-name").val(contact.name || "");
+        $("#contact-email").val(contact.email || "");
+        $("#contact-phone").val(contact.phone || "");
+        $("#contact-organization").val(contact.organization || "");
+        $("#contact-role").val(contact.role || "");
+        $("#contact-tags").val((contact.tags || []).join(", "));
+        $("#contact-notes").val(contact.notes || "");
+
+        // Show contact modal
+        $("#contactModal").modal("show");
+      },
+      error: function (xhr, status, error) {
+        console.error("Error loading contact for editing:", error);
+        if (typeof showToast === "function") {
+          showToast(
+            "error",
+            "Error",
+            "Failed to load contact information for editing."
+          );
+        }
+      },
+    });
+  }
+
+  // Save contact (create or update)
+  function saveContact() {
+    const contactId = $("#contact-id").val();
+    const isEdit = contactId !== "";
+
+    const contactForm = document.getElementById("contact-form");
+    if (!contactForm.checkValidity()) {
+      contactForm.reportValidity();
+      return;
+    }
+
+    // Show loading state
+    $("#save-contact-btn").html(`
+      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      Saving...
+    `);
+    $("#save-contact-btn").prop("disabled", true);
+
+    // Prepare contact data
+    const contactData = {
+      name: $("#contact-name").val(),
+      email: $("#contact-email").val(),
+      phone: $("#contact-phone").val(),
+      organization: $("#contact-organization").val(),
+      role: $("#contact-role").val(),
+      tags: $("#contact-tags").val()
+        ? $("#contact-tags")
+            .val()
+            .split(",")
+            .map((tag) => tag.trim())
+        : [],
+      notes: $("#contact-notes").val(),
+    };
+
+    // Determine request method and URL
+    const method = isEdit ? "PUT" : "POST";
+    const url = isEdit ? `/api/contacts/${contactId}` : "/api/contacts";
+
+    $.ajax({
+      url: url,
+      method: method,
+      data: JSON.stringify(contactData),
+      contentType: "application/json",
+      success: function (response) {
+        // Close modal
+        $("#contactModal").modal("hide");
+
+        // Reload contacts
+        loadContacts();
+
+        // Show success toast
+        if (typeof showToast === "function") {
+          showToast(
+            "success",
+            isEdit ? "Contact Updated" : "Contact Added",
+            isEdit
+              ? "Contact information has been updated successfully."
+              : "New contact has been added successfully."
+          );
+        }
+      },
+      error: function (xhr, status, error) {
+        console.error("Error saving contact:", error);
+        if (typeof showToast === "function") {
+          showToast(
+            "error",
+            "Error",
+            xhr.responseJSON?.error ||
+              "Failed to save contact. Please try again."
+          );
+        }
+      },
+      complete: function () {
+        // Reset button state
+        $("#save-contact-btn").html(
+          `<i class="fas fa-save me-1"></i> Save Contact`
+        );
+        $("#save-contact-btn").prop("disabled", false);
+      },
+    });
+  }
+
+  // Delete contact
+  function deleteContact() {
+    const contactId = $("#confirm-delete-btn").data("id");
+
+    // Show loading state
+    $("#confirm-delete-btn").html(`
+      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+      Deleting...
+    `);
+    $("#confirm-delete-btn").prop("disabled", true);
+
+    $.ajax({
+      url: `/api/contacts/${contactId}`,
+      method: "DELETE",
+      success: function (response) {
+        // Close modal and reload contacts
+        $("#deleteConfirmModal").modal("hide");
+        loadContacts();
+
+        // Show success toast
+        if (typeof showToast === "function") {
+          showToast(
+            "success",
+            "Contact Deleted",
+            "The contact has been permanently deleted."
+          );
+        }
+      },
+      error: function (xhr, status, error) {
+        console.error("Error deleting contact:", error);
+
+        // Show error toast
+        if (typeof showToast === "function") {
+          showToast(
+            "error",
+            "Deletion Failed",
+            xhr.responseJSON?.error ||
+              "Failed to delete contact. Please try again."
+          );
+        }
+      },
+      complete: function () {
+        // Reset button state
+        $("#confirm-delete-btn").html(
+          `<i class="fas fa-trash me-1"></i> Delete Permanently`
+        );
+        $("#confirm-delete-btn").prop("disabled", false);
+      },
+    });
+  }
+
+  // Reset contact form
+  function resetContactForm() {
+    document.getElementById("contact-form").reset();
+    $("#contact-id").val("");
+  }
+</script>
+{% endblock %}

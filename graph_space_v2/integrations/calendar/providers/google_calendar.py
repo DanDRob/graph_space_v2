@@ -56,16 +56,49 @@ class GoogleCalendarProvider:
             scopes=['https://www.googleapis.com/auth/calendar.readonly']
         )
 
+        # Auth status flags
+        self.auth_required = False
+        self.authenticated = False
+
         self.service = None
-        self._authenticate()
+
+        # Only authenticate immediately if auth is not deferred
+        if not self.auth_required:
+            self._authenticate()
 
     def _authenticate(self) -> None:
         """Authenticate with Google Calendar API"""
-        creds = self.auth.get_credentials()
-        self.service = build('calendar', 'v3', credentials=creds)
+        try:
+            creds = self.auth.get_credentials()
+
+            if not creds:
+                if self.auth_required:
+                    # Just mark as not authenticated, don't raise exception
+                    self.authenticated = False
+                    return
+                else:
+                    raise ValueError("No valid credentials found")
+
+            self.service = build('calendar', 'v3', credentials=creds)
+            self.authenticated = True
+        except Exception as e:
+            self.authenticated = False
+            if not self.auth_required:
+                raise IntegrationError(
+                    f"Failed to authenticate with Google Calendar: {e}")
+            print(f"Warning: Failed to authenticate with Google Calendar: {e}")
+
+    def _ensure_authenticated(self) -> bool:
+        """Ensure service is authenticated before making API calls"""
+        if not self.authenticated or not self.service:
+            self._authenticate()
+        return self.authenticated
 
     def get_calendars(self) -> List[Calendar]:
         """Get list of calendars"""
+        if not self._ensure_authenticated():
+            raise IntegrationError("Not authenticated with Google Calendar")
+
         response = self.service.calendarList().list().execute()
         calendars = []
 
@@ -89,6 +122,9 @@ class GoogleCalendarProvider:
         end_date: datetime
     ) -> List[CalendarEvent]:
         """Get events from a calendar within the date range"""
+        if not self._ensure_authenticated():
+            raise IntegrationError("Not authenticated with Google Calendar")
+
         # Format dates for Google API
         time_min = start_date.isoformat() + 'Z'
         time_max = end_date.isoformat() + 'Z'
@@ -124,10 +160,10 @@ class GoogleCalendarProvider:
                 end_date_str = end.get('date')
 
                 # Parse the date strings
-                start_time = datetime.datetime.fromisoformat(start_date_str)
+                start_time = datetime.fromisoformat(start_date_str)
                 # End date is exclusive in Google API, so subtract one day
-                end_date = datetime.datetime.fromisoformat(end_date_str)
-                end_time = end_date - datetime.timedelta(days=1)
+                end_date = datetime.fromisoformat(end_date_str)
+                end_time = end_date - timedelta(days=1)
             else:
                 # Parse regular events with a specific time
                 start_time_str = start.get('dateTime')
@@ -135,12 +171,12 @@ class GoogleCalendarProvider:
 
                 if start_time_str:
                     # Remove 'Z' and handle timezone
-                    start_time = datetime.datetime.fromisoformat(
+                    start_time = datetime.fromisoformat(
                         start_time_str.replace('Z', '+00:00'))
 
                 if end_time_str:
                     # Remove 'Z' and handle timezone
-                    end_time = datetime.datetime.fromisoformat(
+                    end_time = datetime.fromisoformat(
                         end_time_str.replace('Z', '+00:00'))
 
             # Get attendees
@@ -174,6 +210,9 @@ class GoogleCalendarProvider:
 
     def create_event(self, calendar_id: str, event: CalendarEvent) -> CalendarEvent:
         """Create a new event in Google Calendar"""
+        if not self._ensure_authenticated():
+            raise IntegrationError("Not authenticated with Google Calendar")
+
         event_data = self._event_to_google_format(event)
 
         # Call the API to create the event
@@ -187,6 +226,9 @@ class GoogleCalendarProvider:
 
     def update_event(self, calendar_id: str, event: CalendarEvent) -> CalendarEvent:
         """Update an existing event in Google Calendar"""
+        if not self._ensure_authenticated():
+            raise IntegrationError("Not authenticated with Google Calendar")
+
         event_data = self._event_to_google_format(event)
 
         # Call the API to update the event
@@ -201,62 +243,64 @@ class GoogleCalendarProvider:
 
     def delete_event(self, calendar_id: str, event_id: str) -> bool:
         """Delete an event from Google Calendar"""
+        if not self._ensure_authenticated():
+            raise IntegrationError("Not authenticated with Google Calendar")
+
         try:
             self.service.events().delete(
                 calendarId=calendar_id,
                 eventId=event_id
             ).execute()
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            raise IntegrationError(f"Failed to delete event: {e}")
 
     def _event_to_google_format(self, event: CalendarEvent) -> Dict[str, Any]:
         """Convert a CalendarEvent to Google Calendar API format"""
-        google_event = {
+        # Create basic event data
+        event_data = {
             'summary': event.title,
-            'description': event.description,
             'location': event.location,
+            'description': event.description,
+            'status': 'confirmed'
         }
 
-        # Handle all-day events differently
+        # Set start and end times based on all-day status
         if event.is_all_day:
-            # For all-day events, we use 'date' instead of 'dateTime'
-            start_date = event.start_time.date().isoformat()
-            # Google API needs end date to be exclusive, so add one day
-            end_date = (event.end_time.date() +
-                        datetime.timedelta(days=1)).isoformat()
+            # All-day events use date instead of dateTime
+            start_date = event.start_time.date().isoformat(
+            ) if event.start_time else datetime.now().date().isoformat()
+            end_date = event.end_time.date().isoformat() if event.end_time else (
+                datetime.now() + timedelta(days=1)).date().isoformat()
 
-            google_event['start'] = {'date': start_date}
-            google_event['end'] = {'date': end_date}
+            event_data['start'] = {'date': start_date}
+            event_data['end'] = {'date': end_date}
         else:
-            # Regular events with specific times
-            start_time = event.start_time.isoformat()
-            end_time = event.end_time.isoformat()
+            # Regular events use dateTime
+            start_time = event.start_time.isoformat(
+            ) if event.start_time else datetime.now().isoformat()
+            end_time = event.end_time.isoformat() if event.end_time else (
+                datetime.now() + timedelta(hours=1)).isoformat()
 
-            google_event['start'] = {'dateTime': start_time, 'timeZone': 'UTC'}
-            google_event['end'] = {'dateTime': end_time, 'timeZone': 'UTC'}
+            event_data['start'] = {'dateTime': start_time, 'timeZone': 'UTC'}
+            event_data['end'] = {'dateTime': end_time, 'timeZone': 'UTC'}
 
-        # Add attendees if specified
+        # Add attendees if provided
         if event.attendees:
-            google_event['attendees'] = [
-                {'email': attendee} for attendee in event.attendees
-            ]
+            event_data['attendees'] = [{'email': email}
+                                       for email in event.attendees]
 
-        # Add recurrence rule if specified
-        if event.is_recurring and event.recurrence_rule:
-            google_event['recurrence'] = [event.recurrence_rule]
+        # Add recurrence if provided
+        if event.recurrence_rule:
+            event_data['recurrence'] = [event.recurrence_rule]
 
-        return google_event
+        return event_data
 
-    def _google_event_to_calendar_event(
-        self,
-        event_data: Dict[str, Any],
-        calendar_id: str
-    ) -> CalendarEvent:
-        """Convert Google Calendar API format to CalendarEvent"""
+    def _google_event_to_calendar_event(self, google_event: Dict[str, Any], calendar_id: str) -> CalendarEvent:
+        """Convert a Google Calendar API event to a CalendarEvent"""
         # Parse start and end times
-        start = event_data.get('start', {})
-        end = event_data.get('end', {})
+        start = google_event.get('start', {})
+        end = google_event.get('end', {})
 
         start_time = None
         end_time = None
@@ -269,10 +313,10 @@ class GoogleCalendarProvider:
             end_date_str = end.get('date')
 
             # Parse the date strings
-            start_time = datetime.datetime.fromisoformat(start_date_str)
+            start_time = datetime.fromisoformat(start_date_str)
             # End date is exclusive in Google API, so subtract one day
-            end_date = datetime.datetime.fromisoformat(end_date_str)
-            end_time = end_date - datetime.timedelta(days=1)
+            end_date = datetime.fromisoformat(end_date_str)
+            end_time = end_date - timedelta(days=1)
         else:
             # Parse regular events with a specific time
             start_time_str = start.get('dateTime')
@@ -280,35 +324,46 @@ class GoogleCalendarProvider:
 
             if start_time_str:
                 # Remove 'Z' and handle timezone
-                start_time = datetime.datetime.fromisoformat(
+                start_time = datetime.fromisoformat(
                     start_time_str.replace('Z', '+00:00'))
 
             if end_time_str:
                 # Remove 'Z' and handle timezone
-                end_time = datetime.datetime.fromisoformat(
+                end_time = datetime.fromisoformat(
                     end_time_str.replace('Z', '+00:00'))
 
         # Get attendees
         attendees = []
-        for attendee in event_data.get('attendees', []):
+        for attendee in google_event.get('attendees', []):
             email = attendee.get('email')
             if email:
                 attendees.append(email)
 
         # Create event object
         return CalendarEvent(
-            id=event_data['id'],
-            title=event_data.get('summary', 'Untitled Event'),
-            description=event_data.get('description', ''),
+            id=google_event['id'],
+            title=google_event.get('summary', 'Untitled Event'),
+            description=google_event.get('description', ''),
             start_time=start_time,
             end_time=end_time,
-            location=event_data.get('location', ''),
+            location=google_event.get('location', ''),
             attendees=attendees,
-            provider_data=event_data,
+            provider_data=google_event,
             calendar_id=calendar_id,
             provider='google',
             is_all_day=is_all_day,
-            is_recurring=bool(event_data.get('recurrence')),
-            recurrence_rule=event_data.get('recurrence', [None])[
-                0] if event_data.get('recurrence') else None
+            is_recurring=bool(google_event.get('recurrence')),
+            recurrence_rule=google_event.get('recurrence', [None])[
+                0] if google_event.get('recurrence') else None
         )
+
+    def set_credentials(self, credentials):
+        """
+        Set credentials for use with web-based authentication flow.
+
+        Args:
+            credentials: OAuth2 credentials from web auth flow
+        """
+        from googleapiclient.discovery import build
+        self.service = build('calendar', 'v3', credentials=credentials)
+        self.authenticated = True

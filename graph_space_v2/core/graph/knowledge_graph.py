@@ -43,7 +43,8 @@ class KnowledgeGraph:
             empty_data = {
                 "notes": [],
                 "tasks": [],
-                "contacts": []
+                "contacts": [],
+                "documents": []
             }
             # Save the empty structure
             with open(self.data_path, 'w') as f:
@@ -54,13 +55,13 @@ class KnowledgeGraph:
             with open(self.data_path, 'r') as f:
                 data = json.load(f)
                 # Ensure all required keys exist
-                for key in ["notes", "tasks", "contacts"]:
+                for key in ["notes", "tasks", "contacts", "documents"]:
                     if key not in data:
                         data[key] = []
                 return data
         except json.JSONDecodeError:
             # Handle case where file exists but is empty or invalid
-            return {"notes": [], "tasks": [], "contacts": []}
+            return {"notes": [], "tasks": [], "contacts": [], "documents": []}
 
     def save_data(self):
         """Save the current data back to the JSON file."""
@@ -86,6 +87,9 @@ class KnowledgeGraph:
 
     def _add_nodes_from_data(self):
         """Add nodes to the graph for all entities in the data."""
+        print("Adding nodes to the knowledge graph...")
+        node_count = 0
+
         # Add notes
         for note_data in self.data.get("notes", []):
             node_id = f"note_{note_data.get('id')}"
@@ -99,6 +103,7 @@ class KnowledgeGraph:
                 created_at=note_data.get("created_at", ""),
                 updated_at=note_data.get("updated_at", "")
             )
+            node_count += 1
 
         # Add tasks
         for task_data in self.data.get("tasks", []):
@@ -114,6 +119,7 @@ class KnowledgeGraph:
                 tags=task_data.get("tags", []),
                 project=task_data.get("project", "")
             )
+            node_count += 1
 
         # Add contacts
         for contact_data in self.data.get("contacts", []):
@@ -128,6 +134,57 @@ class KnowledgeGraph:
                 organization=contact_data.get("organization", ""),
                 tags=contact_data.get("tags", [])
             )
+            node_count += 1
+
+        # Add documents
+        documents_added = 0
+        for document_data in self.data.get("documents", []):
+            node_id = f"document_{document_data.get('id')}"
+
+            # Ensure we have tags (combine topics and tags if available)
+            tags = document_data.get("tags", [])
+            topics = document_data.get("topics", [])
+
+            # If tags is None, initialize as empty list
+            if tags is None:
+                tags = []
+
+            # If topics is None, initialize as empty list
+            if topics is None:
+                topics = []
+
+            # Combine tags and topics, removing duplicates
+            combined_tags = list(set(tags + topics))
+
+            # Ensure we have at least one tag
+            if not combined_tags and document_data.get("title"):
+                # Use words from title as basic tags
+                title_words = document_data.get("title", "").lower().split()
+                combined_tags = [w for w in title_words if len(w) > 3][:3]
+
+            # Add "document" tag if not present
+            if "document" not in combined_tags:
+                combined_tags.append("document")
+
+            print(f"Adding document node {node_id} with tags: {combined_tags}")
+
+            self.graph.add_node(
+                node_id,
+                type="document",
+                data=document_data,
+                title=document_data.get("title", ""),
+                content=document_data.get("content", ""),
+                summary=document_data.get("summary", ""),
+                topics=topics,
+                tags=combined_tags,  # Use combined tags
+                created_at=document_data.get("processed_at", ""),
+                updated_at=document_data.get("processed_at", "")
+            )
+            node_count += 1
+            documents_added += 1
+
+        print(
+            f"Added {node_count} nodes to the graph ({documents_added} documents)")
 
     def _add_edges_for_notes(self):
         """Add edges between notes based on shared tags and other relationships."""
@@ -220,6 +277,9 @@ class KnowledgeGraph:
 
     def _add_cross_entity_edges(self):
         """Add edges between different entity types based on relationships."""
+        print(f"Building cross-entity edges...")
+        edge_count = 0
+
         # Connect notes to tasks by tags or mentions
         for note_node in [n for n, attr in self.graph.nodes(data=True) if attr["type"] == "note"]:
             note_data = self.graph.nodes[note_node]
@@ -240,6 +300,7 @@ class KnowledgeGraph:
                         shared_tags=list(shared_tags),
                         weight=len(shared_tags)
                     )
+                    edge_count += 1
 
                 # Connect if task title is mentioned in note
                 task_title = task_data.get("title", "").lower()
@@ -249,36 +310,138 @@ class KnowledgeGraph:
                         relationship="mention",
                         weight=1.0
                     )
+                    edge_count += 1
 
-            # Connect notes to contacts
+        # Connect documents to notes, tasks and contacts by tags
+        doc_nodes = [n for n, attr in self.graph.nodes(
+            data=True) if attr["type"] == "document"]
+        print(f"Found {len(doc_nodes)} document nodes to process")
+
+        for doc_node in doc_nodes:
+            doc_data = self.graph.nodes[doc_node]
+            doc_tags = set(doc_data.get("tags", []) or [])  # Ensure not None
+            doc_topics = set(doc_data.get("topics", [])
+                             or [])  # Ensure not None
+            doc_content = doc_data.get("content", "").lower()
+            doc_title = doc_data.get("title", "").lower()
+
+            # Combine tags and topics for better matching
+            doc_all_tags = doc_tags.union(doc_topics)
+
+            print(
+                f"Document {doc_node} has tags: {doc_tags}, topics: {doc_topics}")
+
+            # If no tags/topics found, create basic connections
+            if not doc_all_tags and (doc_title or doc_content):
+                # Create at least one connection to each note
+                for note_node in [n for n, attr in self.graph.nodes(data=True) if attr["type"] == "note"]:
+                    self.graph.add_edge(
+                        doc_node, note_node,
+                        relationship="associated_document",
+                        weight=0.5
+                    )
+                    edge_count += 1
+                continue
+
+            # Connect documents to notes
+            for note_node in [n for n, attr in self.graph.nodes(data=True) if attr["type"] == "note"]:
+                note_data = self.graph.nodes[note_node]
+                note_tags = set(note_data.get("tags", [])
+                                or [])  # Ensure not None
+                note_content = note_data.get("content", "").lower()
+                note_title = note_data.get("title", "").lower()
+
+                # Connect by shared tags
+                shared_tags = doc_all_tags.intersection(note_tags)
+                if shared_tags:
+                    print(
+                        f"Creating edge between {doc_node} and {note_node} based on shared tags: {shared_tags}")
+                    self.graph.add_edge(
+                        doc_node, note_node,
+                        relationship="shared_tags",
+                        shared_tags=list(shared_tags),
+                        weight=len(shared_tags)
+                    )
+                    edge_count += 1
+                # Connect by content similarity
+                elif doc_title and doc_title in note_content:
+                    self.graph.add_edge(
+                        doc_node, note_node,
+                        relationship="content_mention",
+                        weight=0.8
+                    )
+                    edge_count += 1
+                # Fallback connection if no other connection found
+                elif not shared_tags and not doc_content:
+                    self.graph.add_edge(
+                        doc_node, note_node,
+                        relationship="associated_document",
+                        weight=0.3
+                    )
+                    edge_count += 1
+
+            # Connect documents to tasks
+            for task_node in [n for n, attr in self.graph.nodes(data=True) if attr["type"] == "task"]:
+                task_data = self.graph.nodes[task_node]
+                task_tags = set(task_data.get("tags", [])
+                                or [])  # Ensure not None
+                task_title = task_data.get("title", "").lower()
+                task_desc = task_data.get("description", "").lower()
+
+                # Connect by shared tags
+                shared_tags = doc_all_tags.intersection(task_tags)
+                if shared_tags:
+                    self.graph.add_edge(
+                        doc_node, task_node,
+                        relationship="shared_tags",
+                        shared_tags=list(shared_tags),
+                        weight=len(shared_tags)
+                    )
+                    edge_count += 1
+                # Connect by content similarity
+                elif doc_title and (doc_title in task_title or doc_title in task_desc):
+                    self.graph.add_edge(
+                        doc_node, task_node,
+                        relationship="content_mention",
+                        weight=0.8
+                    )
+                    edge_count += 1
+
+            # Connect documents to contacts
             for contact_node in [n for n, attr in self.graph.nodes(data=True) if attr["type"] == "contact"]:
                 contact_data = self.graph.nodes[contact_node]
+                contact_tags = set(contact_data.get(
+                    "tags", []) or [])  # Ensure not None
                 contact_name = contact_data.get("name", "").lower()
+                contact_org = contact_data.get("organization", "").lower()
 
-                # Connect if contact name is mentioned in note
-                if contact_name and contact_name in note_content:
+                # Connect by shared tags
+                shared_tags = doc_all_tags.intersection(contact_tags)
+                if shared_tags:
                     self.graph.add_edge(
-                        note_node, contact_node,
+                        doc_node, contact_node,
+                        relationship="shared_tags",
+                        shared_tags=list(shared_tags),
+                        weight=len(shared_tags)
+                    )
+                    edge_count += 1
+                # Connect if contact is mentioned in document
+                elif contact_name and contact_name in doc_content:
+                    self.graph.add_edge(
+                        doc_node, contact_node,
                         relationship="mention",
                         weight=1.0
                     )
-
-        # Connect tasks to contacts (e.g., assignee)
-        for task_node in [n for n, attr in self.graph.nodes(data=True) if attr["type"] == "task"]:
-            task_data = self.graph.nodes[task_node]
-            task_description = task_data.get("description", "").lower()
-
-            for contact_node in [n for n, attr in self.graph.nodes(data=True) if attr["type"] == "contact"]:
-                contact_data = self.graph.nodes[contact_node]
-                contact_name = contact_data.get("name", "").lower()
-
-                # Connect if contact name is mentioned in task description
-                if contact_name and contact_name in task_description:
+                    edge_count += 1
+                elif contact_org and contact_org in doc_content:
                     self.graph.add_edge(
-                        task_node, contact_node,
-                        relationship="mention",
-                        weight=1.0
+                        doc_node, contact_node,
+                        relationship="organization_mention",
+                        weight=0.9
                     )
+                    edge_count += 1
+
+        print(f"Created {edge_count} cross-entity edges in total")
 
     def update_embeddings(self, embeddings: Dict[str, np.ndarray]):
         """
@@ -633,3 +796,222 @@ class KnowledgeGraph:
                 result[-1]["next_relationship"] = edge_data
 
         return result
+
+    def add_relationship(self, source_id: str, target_id: str, relationship_type: str,
+                         properties: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Add a relationship between two entities.
+
+        Args:
+            source_id: ID of the source entity
+            target_id: ID of the target entity
+            relationship_type: Type of relationship
+            properties: Additional properties for the relationship
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Determine entity types from IDs in the graph
+        source_type = None
+        target_type = None
+
+        for node_id in self.graph.nodes:
+            parts = node_id.split("_", 1)
+            if len(parts) == 2:
+                node_type, node_id_part = parts
+                if node_id_part == source_id:
+                    source_type = node_type
+                elif node_id_part == target_id:
+                    target_type = node_type
+
+        if not source_type or not target_type:
+            return False
+
+        # Create edge with relationship properties
+        source_node_id = f"{source_type}_{source_id}"
+        target_node_id = f"{target_type}_{target_id}"
+
+        props = {"relationship": relationship_type}
+        if properties:
+            props.update(properties)
+
+        try:
+            self.graph.add_edge(source_node_id, target_node_id, **props)
+            return True
+        except Exception:
+            return False
+
+    def update_node(self, entity_id: str, updates: Dict[str, Any]) -> bool:
+        """
+        Update a node with new data.
+
+        Args:
+            entity_id: ID of the entity to update
+            updates: Dictionary of updates to apply
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Find the entity in our data collections
+        entity_found = False
+
+        # Check if this is a note
+        for note in self.data["notes"]:
+            if note.get("id") == entity_id:
+                for key, value in updates.items():
+                    note[key] = value
+                entity_found = True
+                break
+
+        # Check if this is a task
+        if not entity_found:
+            for task in self.data["tasks"]:
+                if task.get("id") == entity_id:
+                    for key, value in updates.items():
+                        task[key] = value
+                    entity_found = True
+                    break
+
+        # Check if this is a contact
+        if not entity_found:
+            for contact in self.data["contacts"]:
+                if contact.get("id") == entity_id:
+                    for key, value in updates.items():
+                        contact[key] = value
+                    entity_found = True
+                    break
+
+        if not entity_found:
+            return False
+
+        # Rebuild the graph to reflect changes
+        self.build_graph()
+
+        # Save changes
+        self.save_data()
+
+        return True
+
+    def delete_node(self, entity_id: str) -> bool:
+        """
+        Delete a node from the graph.
+
+        Args:
+            entity_id: ID of the entity to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Find and remove the entity from our data collections
+        entity_found = False
+
+        # Try to find and remove from notes
+        self.data["notes"] = [note for note in self.data["notes"]
+                              if note.get("id") != entity_id]
+
+        # Try to find and remove from tasks
+        self.data["tasks"] = [task for task in self.data["tasks"]
+                              if task.get("id") != entity_id]
+
+        # Try to find and remove from contacts
+        orig_contact_count = len(self.data["contacts"])
+        self.data["contacts"] = [contact for contact in self.data["contacts"]
+                                 if contact.get("id") != entity_id]
+        entity_found = len(self.data["contacts"]) < orig_contact_count
+
+        if not entity_found:
+            return False
+
+        # Rebuild the graph to reflect changes
+        self.build_graph()
+
+        # Save changes
+        self.save_data()
+
+        return True
+
+    def remove_all_relationships(self, entity_id: str) -> bool:
+        """
+        Remove all relationships for an entity.
+
+        Args:
+            entity_id: ID of the entity
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Find the node in the graph
+        node_id = None
+        for n in self.graph.nodes:
+            if n.endswith(f"_{entity_id}"):
+                node_id = n
+                break
+
+        if not node_id:
+            return False
+
+        # Get all neighbors before removing edges
+        neighbors = list(self.graph.neighbors(node_id))
+
+        # Remove all edges to neighbors
+        for neighbor in neighbors:
+            self.graph.remove_edge(node_id, neighbor)
+
+        return True
+
+    def add_document(self, document_data: Dict[str, Any]) -> str:
+        """
+        Add a document to the knowledge graph.
+
+        Args:
+            document_data: Document data dictionary
+
+        Returns:
+            ID of the document
+        """
+        # Ensure document has an ID
+        if "id" not in document_data:
+            document_data["id"] = os.path.basename(
+                document_data.get("file_path", ""))
+
+        # Ensure documents array exists
+        if "documents" not in self.data:
+            self.data["documents"] = []
+
+        # Check if document already exists, update if so
+        for i, doc in enumerate(self.data["documents"]):
+            if doc.get("id") == document_data["id"]:
+                self.data["documents"][i] = document_data
+                self.build_graph()  # Rebuild the graph
+                self.save_data()
+                return document_data["id"]
+
+        # Add document to data structure
+        self.data["documents"].append(document_data)
+
+        # Rebuild the graph to include the new document
+        self.build_graph()
+
+        # Save data
+        self.save_data()
+
+        return document_data["id"]
+
+    def get_document(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a document by ID.
+
+        Args:
+            document_id: ID of the document
+
+        Returns:
+            Document data or None if not found
+        """
+        if "documents" not in self.data:
+            return None
+
+        for document in self.data["documents"]:
+            if document.get("id") == document_id:
+                return document
+
+        return None

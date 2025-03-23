@@ -276,14 +276,90 @@ class QueryService:
             }
 
         try:
+            print(f"Processing natural language query: {query}")
             # First perform a semantic search to get relevant context
             search_results = self.semantic_search(query)
+            print(f"Found {len(search_results)} semantic search results")
 
-            # Extract context from search results
-            context = "\n\n".join([
-                f"{result['type'].upper()}: {result['snippet']}"
-                for result in search_results
-            ])
+            # Get graph context by exploring relationships from top results
+            graph_context = []
+
+            # Track seen entities to avoid duplicates
+            seen_entities = set()
+
+            # For each result, explore its neighbors in the graph
+            # Use top 3 results as starting points
+            for result in search_results[:3]:
+                entity_type = result.get('type')
+                entity_id = result.get('id')
+
+                if not entity_type or not entity_id:
+                    continue
+
+                # Skip if we've already processed this entity
+                entity_key = f"{entity_type}_{entity_id}"
+                if entity_key in seen_entities:
+                    continue
+
+                seen_entities.add(entity_key)
+
+                # Add the current entity to context
+                graph_context.append({
+                    'type': entity_type,
+                    'id': entity_id,
+                    'content': self._get_entity_content(entity_type, entity_id),
+                    'relationship': 'direct_match'
+                })
+
+                # Get connected entities
+                try:
+                    related_entities = self.knowledge_graph.get_related_entities(
+                        entity_id, entity_type)
+                    print(
+                        f"Found {len(related_entities)} related entities for {entity_type} {entity_id}")
+
+                    for related in related_entities:
+                        related_key = f"{related.get('type')}_{related.get('id')}"
+
+                        # Skip if we've already seen this entity
+                        if related_key in seen_entities:
+                            continue
+
+                        seen_entities.add(related_key)
+
+                        # Add to context with relationship information
+                        graph_context.append({
+                            'type': related.get('type'),
+                            'id': related.get('id'),
+                            'content': self._get_entity_content(related.get('type'), related.get('id')),
+                            'relationship': related.get('relationship', 'related')
+                        })
+                except Exception as e:
+                    print(f"Error getting related entities: {e}")
+
+            # Combine semantic search results with graph context
+            combined_context = search_results + [item for item in graph_context
+                                                 if f"{item['type']}_{item['id']}" not in
+                                                 {f"{r['type']}_{r['id']}" for r in search_results}]
+
+            # Build rich context string for LLM including relationship information
+            context_items = []
+
+            for item in combined_context:
+                entity_type = item.get('type', '').upper()
+                entity_content = item.get('content') or item.get('snippet', '')
+                relationship = item.get('relationship', 'direct_match')
+
+                if entity_content:
+                    # Add relationship information to help LLM understand connections
+                    relationship_info = f" (Relationship: {relationship})" if relationship != 'direct_match' else ""
+                    context_items.append(
+                        f"{entity_type}{relationship_info}: {entity_content}")
+
+            # Join all context items
+            context = "\n\n".join(context_items)
+
+            print(f"Built context with {len(context_items)} items")
 
             # Generate answer using LLM
             answer = self.llm_service.generate_answer(query, context)
@@ -291,14 +367,51 @@ class QueryService:
             return {
                 "query": query,
                 "answer": answer,
-                "sources": search_results
+                "sources": combined_context
             }
 
         except Exception as e:
+            print(f"Error processing natural language query: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {
                 "error": f"Error processing natural language query: {str(e)}",
                 "search_results": self.text_search(query)
             }
+
+    def _get_entity_content(self, entity_type: str, entity_id: str) -> str:
+        """Get the main content text for an entity by type and ID."""
+        entity = self._get_entity(entity_type, entity_id)
+        if not entity:
+            return ""
+
+        if entity_type == "note":
+            # For notes, include title and content
+            title = entity.get('title', '')
+            content = entity.get('content', '')
+            return f"{title}\n{content}" if title else content
+
+        elif entity_type == "task":
+            # For tasks, include title and description
+            title = entity.get('title', '')
+            description = entity.get('description', '')
+            status = entity.get('status', '')
+            return f"{title} ({status})\n{description}" if description else title
+
+        elif entity_type == "contact":
+            # For contacts, return formatted contact info
+            name = entity.get('name', '')
+            email = entity.get('email', '')
+            organization = entity.get('organization', '')
+            return f"{name}, {organization}, {email}" if organization else f"{name}, {email}"
+
+        elif entity_type == "document":
+            # For documents, use summary if available, else use title
+            title = entity.get('title', '')
+            summary = entity.get('summary', '')
+            return f"{title}\n{summary}" if summary else title
+
+        return ""
 
     def find_path_between_entities(self, source_type: str, source_id: str, target_type: str, target_id: str) -> List[Dict[str, Any]]:
         """
@@ -315,17 +428,150 @@ class QueryService:
         """
         return self.knowledge_graph.find_path(source_id, source_type, target_id, target_type)
 
-    def get_entities_by_tag(self, tag: str) -> List[Dict[str, Any]]:
+    def get_entities_by_tag(self, entity_type: str) -> List[Dict[str, Any]]:
         """
-        Get all entities with a specific tag.
+        Get all entities of a specific type.
 
         Args:
-            tag: The tag to search for
+            entity_type: Type of entity to get ('note', 'task', 'contact')
 
         Returns:
-            List of entities with the tag
+            List of entities
         """
-        return self.knowledge_graph.search_by_tag(tag)
+        if entity_type == "note":
+            return self.knowledge_graph.data.get("notes", [])
+        elif entity_type == "task":
+            return self.knowledge_graph.data.get("tasks", [])
+        elif entity_type == "contact":
+            return self.knowledge_graph.data.get("contacts", [])
+        elif entity_type == "document":
+            return self.knowledge_graph.data.get("documents", [])
+        else:
+            return []
+
+    def get_contacts(self) -> List[Dict[str, Any]]:
+        """
+        Get all contacts from the knowledge graph.
+
+        Returns:
+            List of contact dictionaries
+        """
+        return self.knowledge_graph.data.get("contacts", [])
+
+    def search_all_entities(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+        """
+        Search across all entity types (notes, tasks, contacts, documents).
+
+        Args:
+            query: Search query string
+            max_results: Maximum number of results to return
+
+        Returns:
+            List of matching entities with relevance scores
+        """
+        results = []
+
+        # Try semantic search first if embedding service is available
+        if self.embedding_service:
+            try:
+                query_embedding = self.embedding_service.embed_text(query)
+                search_results = self.embedding_service.search(
+                    query_embedding, max_results * 2)
+
+                for match in search_results.get("matches", []):
+                    entity_id = match["id"]
+                    entity_type = match["metadata"].get("type", "")
+
+                    # Get full entity data
+                    entity_data = None
+                    if entity_type == "note":
+                        entity_data = self.knowledge_graph.get_note(entity_id)
+                    elif entity_type == "task":
+                        entity_data = self.knowledge_graph.get_task(entity_id)
+                    elif entity_type == "contact":
+                        entity_data = self._get_entity("contact", entity_id)
+                    elif entity_type == "document" or entity_type == "document_chunk":
+                        entity_data = self.knowledge_graph.get_document(
+                            entity_id.split("_chunk_")[0])
+
+                    if entity_data:
+                        results.append({
+                            "id": entity_id,
+                            "type": entity_type,
+                            "entity": entity_data,
+                            "score": match["score"],
+                            "matched_by": "semantic"
+                        })
+            except Exception as e:
+                print(f"Error in semantic search: {e}")
+                # Fall back to text search
+
+        # Add text search results if semantic search didn't find enough
+        if len(results) < max_results:
+            text_results_needed = max_results - len(results)
+
+            # Search notes
+            for note in self.knowledge_graph.data.get("notes", []):
+                if query.lower() in note.get("title", "").lower() or query.lower() in note.get("content", "").lower():
+                    results.append({
+                        "id": note["id"],
+                        "type": "note",
+                        "entity": note,
+                        "score": 0.7,  # Arbitrary score for text match
+                        "matched_by": "text"
+                    })
+
+            # Search tasks
+            for task in self.knowledge_graph.data.get("tasks", []):
+                if query.lower() in task.get("title", "").lower() or query.lower() in task.get("description", "").lower():
+                    results.append({
+                        "id": task["id"],
+                        "type": "task",
+                        "entity": task,
+                        "score": 0.7,
+                        "matched_by": "text"
+                    })
+
+            # Search contacts
+            for contact in self.knowledge_graph.data.get("contacts", []):
+                if query.lower() in contact.get("name", "").lower() or query.lower() in contact.get("email", "").lower():
+                    results.append({
+                        "id": contact["id"],
+                        "type": "contact",
+                        "entity": contact,
+                        "score": 0.7,
+                        "matched_by": "text"
+                    })
+
+            # Search documents
+            for document in self.knowledge_graph.data.get("documents", []):
+                if (query.lower() in document.get("title", "").lower() or
+                        query.lower() in document.get("summary", "").lower()):
+                    results.append({
+                        "id": document["id"],
+                        "type": "document",
+                        "entity": document,
+                        "score": 0.7,
+                        "matched_by": "text"
+                    })
+
+        # Deduplicate results by entity ID and type
+        seen_entities = set()
+        unique_results = []
+
+        for result in results:
+            entity_key = f"{result['type']}_{result['id']}"
+            if entity_key not in seen_entities:
+                seen_entities.add(entity_key)
+                unique_results.append(result)
+
+                if len(unique_results) >= max_results:
+                    break
+
+        # Sort by score
+        unique_results.sort(key=lambda x: x["score"], reverse=True)
+
+        return unique_results
 
     def get_graph_statistics(self) -> Dict[str, Any]:
         """
