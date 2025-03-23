@@ -20,5 +20,49 @@
       "RAG",
       "GNN"
     ]
+  },
+  "b420aa0378894bd1b3b0e2d466be30a5.pdf": {
+    "title": "b420aa0378894bd1b3b0e2d466be30a5",
+    "file_path": "c:\\Users\\Daniel Roberts\\Downloads\\graph_space\\graph_space_v2\\data\\documents\\b420aa0378894bd1b3b0e2d466be30a5.pdf",
+    "file_type": "pdf",
+    "processed_at": "2025-03-23T07:24:42.698848",
+    "content_length": 793,
+    "chunks": 1,
+    "topics": [
+      "electric charge",
+      "voltage",
+      "electric current",
+      "power",
+      "energy"
+    ],
+    "tags": [
+      "electric charge",
+      "voltage",
+      "electric current",
+      "power",
+      "energy"
+    ]
+  },
+  "80812ae437ae451cac356ab0d8edb537.docx": {
+    "title": "80812ae437ae451cac356ab0d8edb537",
+    "file_path": "c:\\Users\\Daniel Roberts\\Downloads\\graph_space\\graph_space_v2\\data\\documents\\80812ae437ae451cac356ab0d8edb537.docx",
+    "file_type": "docx",
+    "processed_at": "2025-03-23T07:27:46.156220",
+    "content_length": 1145,
+    "chunks": 1,
+    "topics": [
+      "MIE490/491",
+      "Personal Goals",
+      "Team Charter",
+      "Daniel Roberts",
+      "Team #7"
+    ],
+    "tags": [
+      "MIE490/491",
+      "Personal Goals",
+      "Team Charter",
+      "Daniel Roberts",
+      "Team #7"
+    ]
   }
 }

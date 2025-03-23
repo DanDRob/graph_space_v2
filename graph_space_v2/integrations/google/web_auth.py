@@ -1,10 +1,8 @@
 from typing import Dict, Any, Optional, List
 import os
 import json
-import secrets
 from urllib.parse import urlencode
 
-from flask import url_for, session, redirect, request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -14,29 +12,32 @@ from graph_space_v2.utils.errors.exceptions import IntegrationError
 
 
 class GoogleWebAuth:
-    """Google API authentication helper for web applications."""
+    """Google API authentication helper for web and desktop applications."""
 
     def __init__(
         self,
         client_id: str,
         client_secret: str,
-        redirect_uri: str,
+        client_type: str = "web",
+        redirect_uri: Optional[str] = None,
         scopes: Optional[List[str]] = None,
         token_storage_dir: Optional[str] = None
     ):
         """
-        Initialize Google Web authentication.
+        Initialize Google Web/Desktop authentication.
 
         Args:
             client_id: Google client ID
             client_secret: Google client secret
-            redirect_uri: OAuth redirect URI
+            client_type: Type of client ("web" or "desktop"/"installed")
+            redirect_uri: Optional OAuth redirect URI
             scopes: API scopes to request
             token_storage_dir: Directory to store tokens
         """
         self.client_id = client_id
         self.client_secret = client_secret
-        self.redirect_uri = redirect_uri
+        self.client_type = client_type.lower()
+        self.redirect_uri = redirect_uri or "http://localhost"
         self.scopes = scopes or [
             "https://www.googleapis.com/auth/drive.readonly",
             "https://www.googleapis.com/auth/calendar.readonly"
@@ -46,120 +47,94 @@ class GoogleWebAuth:
             get_data_dir(), "credentials")
         ensure_dir_exists(self.token_storage_dir)
 
-    def start_auth_flow(self, user_id: str, state: Optional[str] = None) -> str:
+    def authenticate(self, user_id: str = "default", port: int = 0) -> Credentials:
         """
-        Start the OAuth flow by creating a authorization URL.
+        Authenticate with Google using a local server flow.
+
+        This method will open a browser window for the user to authenticate with Google,
+        and then capture the response via a local web server.
 
         Args:
-            user_id: User identifier
-            state: State parameter for CSRF protection
+            user_id: User identifier for storing credentials
+            port: Port to use for the local server (0 means auto-select)
 
         Returns:
-            Authorization URL to redirect the user to
+            OAuth2 credentials
         """
-        # Use InstalledAppFlow instead of Flow for better local server handling
-        flow = InstalledAppFlow.from_client_config(
-            {
-                "web": {
+        # Check if we already have valid credentials
+        creds = self.get_credentials(user_id)
+        if creds and creds.valid:
+            return creds
+
+        if creds and creds.expired and creds.refresh_token:
+            # Refresh the credentials
+            creds.refresh(Request())
+            # Save the refreshed credentials
+            self.save_credentials(creds, user_id)
+            return creds
+
+        # Create client config based on client type
+        if self.client_type in ["desktop", "installed"]:
+            client_config = {
+                "installed": {
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    "redirect_uris": [self.redirect_uri]
+                }
+            }
+        else:  # web (default)
+            client_config = {
+                "installed": {  # Using "installed" key even for web flow in InstalledAppFlow
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                     "token_uri": "https://oauth2.googleapis.com/token",
                     "redirect_uris": [self.redirect_uri]
                 }
-            },
+            }
+
+        # Create flow and run local server to get credentials
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
             scopes=self.scopes
         )
 
-        # Generate secure state if not provided
-        if not state:
-            state = secrets.token_urlsafe(16)
+        # Run the local server to handle authentication
+        creds = flow.run_local_server(port=port)
 
-        # Store state in session for verification
-        session['google_auth_state'] = state
+        # Save the credentials
+        self.save_credentials(creds, user_id)
 
-        # Generate the authorization URL with state
-        authorization_url, _ = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true',
-            prompt='consent',
-            state=state
-        )
+        return creds
 
-        return authorization_url
-
-    def handle_callback(self, request_url: str) -> Dict[str, Any]:
+    def save_credentials(self, creds: Credentials, user_id: str = "default") -> None:
         """
-        Handle the OAuth callback.
+        Save credentials for a user.
 
         Args:
-            request_url: The full callback URL with query parameters
-
-        Returns:
-            Dictionary with token information
-        """
-        # Get the state from the request
-        state = request.args.get('state')
-
-        # Verify state matches what we stored
-        if state != session.get('google_auth_state'):
-            raise IntegrationError(
-                "Invalid state parameter. Authentication session may have expired.")
-
-        # Create flow with client config
-        flow = InstalledAppFlow.from_client_config(
-            {
-                "web": {
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [self.redirect_uri]
-                }
-            },
-            scopes=self.scopes,
-            redirect_uri=self.redirect_uri
-        )
-
-        # Exchange the auth code in the callback for credentials
-        authorization_response = request_url
-        flow.fetch_token(authorization_response=authorization_response)
-
-        # Get credentials
-        credentials = flow.credentials
-
-        # Convert credentials to token info
-        token_info = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes,
-            'expiry': credentials.expiry.isoformat() if credentials.expiry else None
-        }
-
-        # Clean up session
-        if 'google_auth_state' in session:
-            del session['google_auth_state']
-
-        return token_info
-
-    def save_token(self, token_info: Dict[str, Any], user_id: str) -> None:
-        """
-        Save token information for a user.
-
-        Args:
-            token_info: Token information
+            creds: OAuth2 credentials
             user_id: User identifier
         """
         token_file = os.path.join(
             self.token_storage_dir, f"{user_id}_token.json")
 
-        with open(token_file, 'w') as f:
-            json.dump(token_info, f)
+        token_data = {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes,
+            'expiry': creds.expiry.isoformat() if creds.expiry else None
+        }
 
-    def get_credentials(self, user_id: str) -> Optional[Credentials]:
+        with open(token_file, 'w') as f:
+            json.dump(token_data, f)
+
+    def get_credentials(self, user_id: str = "default") -> Optional[Credentials]:
         """
         Get credentials for a user.
 
@@ -182,28 +157,13 @@ class GoogleWebAuth:
             creds = Credentials.from_authorized_user_info(
                 token_info, self.scopes)
 
-            # Refresh token if expired
-            if creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                # Save the refreshed token
-                token_info = {
-                    'token': creds.token,
-                    'refresh_token': creds.refresh_token,
-                    'token_uri': creds.token_uri,
-                    'client_id': creds.client_id,
-                    'client_secret': creds.client_secret,
-                    'scopes': creds.scopes,
-                    'expiry': creds.expiry.isoformat() if creds.expiry else None
-                }
-                self.save_token(token_info, user_id)
-
             return creds
 
         except Exception as e:
             print(f"Error loading credentials: {e}")
             return None
 
-    def revoke_token(self, user_id: str) -> bool:
+    def revoke_token(self, user_id: str = "default") -> bool:
         """
         Revoke OAuth token for a user.
 

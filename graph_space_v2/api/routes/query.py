@@ -37,9 +37,19 @@ def graph_data():
         # Get nodes and edges data
         nodes = []
         node_types = {}
+
+        # Count document nodes specifically
+        document_nodes = 0
+
         for node_id, node_data in graphspace.knowledge_graph.graph.nodes(data=True):
             node_type = node_data.get('type', 'unknown')
             node_types[node_type] = node_types.get(node_type, 0) + 1
+
+            # Track document nodes
+            if node_type == 'document':
+                document_nodes += 1
+                print(
+                    f"Found document node: {node_id} - {node_data.get('title', 'Untitled')}")
 
             # Prepare label based on node type
             label = ""
@@ -51,8 +61,13 @@ def graph_data():
                 label = node_data.get(
                     'name', f"Contact {node_id.split('_')[1]}")
             elif node_type == 'document':
-                label = node_data.get(
-                    'title', f"Document {node_id.split('_')[1]}")
+                # Make sure document labels are properly extracted
+                if 'title' in node_data:
+                    label = node_data['title']
+                elif 'data' in node_data and 'title' in node_data['data']:
+                    label = node_data['data']['title']
+                else:
+                    label = f"Document {node_id.split('_')[1]}"
             else:
                 label = f"Node {node_id}"
 
@@ -68,6 +83,32 @@ def graph_data():
                 }
             }
             nodes.append(node_info)
+
+        print(f"Total document nodes found: {document_nodes}")
+
+        # Add document nodes from data if missing in graph
+        if document_nodes == 0 and 'documents' in graphspace.knowledge_graph.data:
+            print("No document nodes found in graph, checking data...")
+            doc_count = len(graphspace.knowledge_graph.data['documents'])
+            print(f"Found {doc_count} documents in data")
+
+            # Force document nodes to be added
+            if doc_count > 0:
+                for doc in graphspace.knowledge_graph.data['documents']:
+                    doc_id = f"document_{doc.get('id')}"
+                    if doc_id not in graphspace.knowledge_graph.graph:
+                        print(f"Adding missing document node: {doc_id}")
+                        nodes.append({
+                            'id': doc_id,
+                            'type': 'document',
+                            'label': doc.get('title', 'Document')[:30] +
+                            ('...' if len(doc.get('title', '')) > 30 else ''),
+                            'data': {
+                                'id': doc.get('id'),
+                                'title': doc.get('title'),
+                                'tags': doc.get('tags', [])
+                            }
+                        })
 
         edges = []
         edge_types = {}

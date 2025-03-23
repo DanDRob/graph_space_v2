@@ -325,3 +325,76 @@ class DocumentProcessor:
             chunks.append(current_chunk)
 
         return chunks
+
+    def process_document(self, content: bytes, filename: str, mime_type: str = None) -> str:
+        """
+        Process a document from binary content (e.g., content downloaded from Google Drive).
+
+        Args:
+            content: Binary content of the document
+            filename: Name of the file
+            mime_type: MIME type of the file
+
+        Returns:
+            Document ID (usually the filename)
+        """
+        # Create a temporary file to process
+        import tempfile
+        import uuid
+
+        try:
+            # Create a unique temporary file with the correct extension
+            file_extension = os.path.splitext(filename)[1]
+            if not file_extension and mime_type:
+                # Try to get extension from mime type
+                if 'pdf' in mime_type:
+                    file_extension = '.pdf'
+                elif 'word' in mime_type or 'docx' in mime_type:
+                    file_extension = '.docx'
+                elif 'excel' in mime_type or 'xlsx' in mime_type:
+                    file_extension = '.xlsx'
+                elif 'text' in mime_type:
+                    file_extension = '.txt'
+                elif 'html' in mime_type:
+                    file_extension = '.html'
+                elif 'markdown' in mime_type:
+                    file_extension = '.md'
+
+            # Generate a unique filename with the correct extension
+            temp_filename = f"{uuid.uuid4().hex}{file_extension}"
+            temp_filepath = os.path.join(self.storage_dir, temp_filename)
+
+            print(
+                f"Saving temporary file to {temp_filepath} (type: {mime_type})")
+
+            # Write content to temporary file
+            with open(temp_filepath, 'wb') as f:
+                f.write(content)
+
+            # Process the temporary file using the existing method
+            metadata = {
+                "source": "google_drive",
+                "original_filename": filename,
+                "mime_type": mime_type,
+                "imported_at": datetime.now().isoformat()
+            }
+
+            result = self.process_single_file(temp_filepath, metadata)
+
+            if result.get('error'):
+                print(f"Error processing document: {result['error']}")
+                raise ValueError(
+                    f"Failed to process document: {result['error']}")
+
+            document_id = result.get('id')
+            if not document_id:
+                print("Document processed but no ID returned")
+                document_id = os.path.basename(temp_filepath)
+
+            print(f"Document processed successfully, ID: {document_id}")
+            return document_id
+
+        except Exception as e:
+            print(f"Error processing document content: {str(e)}")
+            traceback.print_exc()
+            raise ValueError(f"Failed to process document content: {str(e)}")

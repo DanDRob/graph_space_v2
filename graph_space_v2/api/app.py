@@ -55,10 +55,6 @@ def create_app(graphspace_instance=None):
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(integrations_bp, url_prefix='/api')
 
-    # Register the main OAuth callback handler at root level
-    from graph_space_v2.api.routes.integrations import oauth2callback
-    app.route('/oauth2callback')(oauth2callback)
-
     # UI routes
     @app.route('/')
     def index():

@@ -335,21 +335,35 @@
 
         <div id="google-drive-browser-container" style="display: none">
           <!-- Search bar -->
-          <div class="input-group mb-3">
-            <input
-              type="text"
-              id="google-drive-search"
-              class="form-control"
-              placeholder="Search files..."
-              aria-label="Search files"
-            />
-            <button
-              class="btn btn-outline-secondary"
-              type="button"
-              id="google-drive-search-btn"
-            >
-              <i class="fas fa-search"></i>
-            </button>
+          <div class="mb-3">
+            <div class="input-group">
+              <input
+                type="text"
+                id="google-drive-search"
+                class="form-control"
+                placeholder="Search files..."
+                aria-label="Search files"
+              />
+              <button
+                class="btn btn-outline-secondary"
+                type="button"
+                id="google-drive-search-btn"
+              >
+                <i class="fas fa-search"></i>
+              </button>
+            </div>
+            <div class="d-flex justify-content-end mt-2">
+              <select
+                id="google-drive-sort"
+                class="form-select form-select-sm"
+                style="width: auto"
+              >
+                <option value="modifiedTime desc">Recent first</option>
+                <option value="modifiedTime asc">Oldest first</option>
+                <option value="name asc">Name (A-Z)</option>
+                <option value="name desc">Name (Z-A)</option>
+              </select>
+            </div>
           </div>
 
           <!-- Files list -->
@@ -910,6 +924,7 @@
     const googleDriveSearchBtn = document.getElementById(
       "google-drive-search-btn"
     );
+    const googleDriveSort = document.getElementById("google-drive-sort");
     const googleDriveFilesList = document.getElementById(
       "google-drive-files-list"
     );
@@ -942,16 +957,13 @@
           return response.json();
         })
         .then((data) => {
-          if (data.auth_url) {
-            // Redirect to Google auth page
-            window.location.href = data.auth_url;
-          } else {
-            console.error("Error starting Google auth:", data.error);
-            alert(
-              "Error connecting to Google Drive: " +
-                (data.error || "Unknown error")
-            );
-          }
+          alert(
+            "Authentication started. Please complete the process in the browser window that opens. This page will refresh automatically after 5 seconds."
+          );
+          // Refresh the page after 5 seconds to show the updated status
+          setTimeout(() => {
+            window.location.reload();
+          }, 5000);
         })
         .catch((error) => {
           console.error("Error connecting to Google Drive:", error);
@@ -970,6 +982,12 @@
       if (e.key === "Enter") {
         googleDriveSearchBtn.click();
       }
+    });
+
+    // Sort change
+    googleDriveSort.addEventListener("change", function () {
+      const query = googleDriveSearch.value.trim();
+      loadGoogleDriveFiles(query);
     });
 
     // Retry button
@@ -1023,10 +1041,16 @@
       googleDriveEmpty.style.display = "none";
       googleDriveError.style.display = "none";
 
+      // Get sort order
+      const sortOrder = document.getElementById("google-drive-sort").value;
+
       // Build URL
-      let url = "/api/integrations/google/drive/files?max_results=50";
+      let url = "/api/integrations/google/drive/files?max_results=500";
       if (query) {
         url += "&query=" + encodeURIComponent(query);
+      }
+      if (sortOrder) {
+        url += "&order_by=" + encodeURIComponent(sortOrder);
       }
 
       // Fetch files
@@ -1132,6 +1156,14 @@
 
     // Import Google Drive file
     function importGoogleDriveFile(fileId) {
+      // Get file name from the active selection
+      const selectedItem = document.querySelector(
+        "#google-drive-files-list .list-group-item.active"
+      );
+      const fileName = selectedItem
+        ? selectedItem.querySelector("span").textContent
+        : "selected file";
+
       // Update button state
       googleDriveImportBtn.disabled = true;
       googleDriveImportBtn.innerHTML =
@@ -1141,7 +1173,11 @@
       fetch(`/api/integrations/google/drive/download/${fileId}`)
         .then((response) => {
           if (!response.ok) {
-            throw new Error("Failed to import file from Google Drive");
+            return response.json().then((data) => {
+              throw new Error(
+                data.error || `Failed to import file (HTTP ${response.status})`
+              );
+            });
           }
           return response.json();
         })
@@ -1162,7 +1198,40 @@
         })
         .catch((error) => {
           console.error("Error importing Google Drive file:", error);
-          alert("Error importing file: " + error.message);
+          const errorMessage = error.message || "Unknown error";
+
+          // Create a more detailed error message
+          const errorDetails = document.createElement("div");
+          errorDetails.innerHTML = `
+            <div class="alert alert-danger mt-3">
+              <h5><i class="fas fa-exclamation-triangle me-2"></i> Import Failed</h5>
+              <p>${errorMessage}</p>
+              <p class="mb-0 small">File: ${fileName}</p>
+              <p class="mb-0 small">File ID: ${fileId}</p>
+              <p class="mt-2 small">Try selecting a different file or a different file format.</p>
+            </div>
+          `;
+
+          // Insert error message in the modal
+          const errorContainer = document.createElement("div");
+          errorContainer.id = "google-drive-import-error";
+          errorContainer.appendChild(errorDetails);
+
+          // Remove any existing error messages
+          const existingError = document.getElementById(
+            "google-drive-import-error"
+          );
+          if (existingError) {
+            existingError.remove();
+          }
+
+          // Add the error message to the modal
+          document
+            .getElementById("google-drive-files-container")
+            .appendChild(errorContainer);
+
+          // Scroll to the error message
+          errorContainer.scrollIntoView({ behavior: "smooth" });
 
           // Reset button state
           googleDriveImportBtn.disabled = false;

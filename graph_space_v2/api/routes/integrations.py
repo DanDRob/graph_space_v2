@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify, current_app, redirect, session, url_for
 import os
 from datetime import datetime, timedelta
-import uuid
-import webbrowser
+import threading
+import json
 
 from graph_space_v2.integrations.google.web_auth import GoogleWebAuth
 from graph_space_v2.integrations.google.drive_service import GoogleDriveService
@@ -27,12 +27,16 @@ def get_google_web_auth():
     # Get Google credentials from environment variables
     client_id = os.environ.get('GOOGLE_CLIENT_ID')
     client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
-    redirect_uri = os.environ.get('GOOGLE_REDIRECT_URI')
+    client_type = os.environ.get('GOOGLE_CLIENT_TYPE', 'web')
 
     if not client_id or not client_secret:
         raise IntegrationError('Google API credentials not configured')
 
-    return GoogleWebAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri)
+    return GoogleWebAuth(
+        client_id=client_id,
+        client_secret=client_secret,
+        client_type=client_type
+    )
 
 # Google Auth Routes
 
@@ -58,52 +62,27 @@ def google_auth_status():
 
 @integrations_bp.route('/integrations/google/auth/start', methods=['GET'])
 def google_auth_start():
-    """Start Google OAuth flow"""
+    """Start Google OAuth flow using the local server approach"""
     user_id = session.get('user_id', 'default')
 
-    try:
-        # Get GoogleWebAuth instance
-        google_auth = get_google_web_auth()
+    def run_auth_in_thread():
+        try:
+            # Get GoogleWebAuth instance
+            google_auth = get_google_web_auth()
 
-        # Start OAuth flow using the environment variables
-        auth_url = google_auth.start_auth_flow(user_id)
+            # This will open a browser and run a local server for auth
+            creds = google_auth.authenticate(user_id=user_id)
 
-        # Open the auth URL in a browser for desktop OAuth flow
-        webbrowser.open(auth_url)
+            print(f"Authentication successful for user {user_id}")
+        except Exception as e:
+            print(f"Authentication error: {e}")
 
-        return jsonify({
-            'auth_url': auth_url,
-            'message': 'Authentication started. Please complete the process in your browser.'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    # Start authentication in a separate thread to not block the response
+    threading.Thread(target=run_auth_in_thread).start()
 
-
-@integrations_bp.route('/oauth2callback', methods=['GET'])
-def oauth2callback():
-    """Handle Google OAuth callback at the registered redirect URI"""
-    user_id = session.get('user_id', 'default')
-
-    try:
-        # Get GoogleWebAuth instance
-        google_auth = get_google_web_auth()
-
-        # Handle callback - state verification happens inside the method
-        token_info = google_auth.handle_callback(request.url)
-
-        # Save token for user
-        google_auth.save_token(token_info, user_id)
-
-        # Redirect to settings page
-        return redirect('/settings?google_auth=success')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@integrations_bp.route('/integrations/google/auth/callback', methods=['GET'])
-def google_auth_callback():
-    """Additional callback handler for backward compatibility"""
-    return oauth2callback()
+    return jsonify({
+        'message': 'Authentication started. Please complete the process in the browser window that opens.'
+    })
 
 
 @integrations_bp.route('/integrations/google/auth/logout', methods=['POST'])
@@ -134,7 +113,8 @@ def google_drive_files():
     folder_id = request.args.get('folder_id')
     query = request.args.get('query')
     mime_types = request.args.getlist('mime_type')
-    max_results = int(request.args.get('max_results', 100))
+    max_results = int(request.args.get('max_results', 500))
+    order_by = request.args.get('order_by', 'modifiedTime desc')
 
     try:
         # Get GoogleWebAuth instance
@@ -167,7 +147,8 @@ def google_drive_files():
             folder_id=folder_id,
             mime_types=mime_types if mime_types else None,
             query=query,
-            max_results=max_results
+            max_results=max_results,
+            order_by=order_by
         )
         return jsonify({'files': files})
     except Exception as e:
@@ -186,31 +167,50 @@ def google_drive_download(file_id):
         # Get credentials
         creds = google_auth.get_credentials(user_id)
         if not creds:
-            return jsonify({'error': 'Not authenticated with Google Drive'}), 401
+            return jsonify({'error': 'Not authenticated with Google Drive', 'success': False}), 401
 
         # Get GraphSpace instance
         graphspace = current_app.config['GRAPHSPACE']
+        if not graphspace:
+            return jsonify({'error': 'GraphSpace instance not found', 'success': False}), 500
 
         # Get drive service or create a new one if GraphSpace doesn't have one
-        if graphspace.use_google_drive:
-            drive_service = graphspace.google_drive_service
+        try:
+            if graphspace.use_google_drive:
+                drive_service = graphspace.google_drive_service
 
-            # If not authenticated, set credentials
-            if not drive_service.authenticated:
+                # If not authenticated, set credentials
+                if not drive_service.authenticated:
+                    drive_service.set_credentials(creds)
+            else:
+                # Create a standalone drive service
+                drive_service = GoogleDriveService(
+                    document_processor=graphspace.document_processor
+                )
                 drive_service.set_credentials(creds)
-        else:
-            # Create a standalone drive service
-            drive_service = GoogleDriveService(
-                document_processor=graphspace.document_processor
-            )
-            drive_service.set_credentials(creds)
+        except Exception as e:
+            print(f"Error initializing drive service: {str(e)}")
+            return jsonify({'error': f'Failed to initialize Google Drive service: {str(e)}', 'success': False}), 500
+
+        if not drive_service.authenticated:
+            return jsonify({'error': 'Google Drive service not authenticated', 'success': False}), 401
 
         # Get file metadata
-        file_metadata = drive_service.service.files().get(
-            fileId=file_id, fields="name,mimeType").execute()
+        try:
+            file_metadata = drive_service.service.files().get(
+                fileId=file_id, fields="name,mimeType").execute()
+            print(f"Retrieved metadata for file: {file_metadata.get('name')}")
+        except Exception as e:
+            print(f"Error getting file metadata: {str(e)}")
+            return jsonify({'error': f'Failed to get file metadata: {str(e)}', 'success': False}), 500
 
         # Import document directly
-        document_id = drive_service.import_document(file_id)
+        try:
+            document_id = drive_service.import_document(file_id)
+            print(f"Successfully imported document with ID: {document_id}")
+        except Exception as e:
+            print(f"Error importing document: {str(e)}")
+            return jsonify({'error': f'Failed to import document: {str(e)}', 'success': False}), 500
 
         return jsonify({
             'success': True,
@@ -218,7 +218,9 @@ def google_drive_download(file_id):
             'filename': file_metadata.get('name')
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(
+            f"Unexpected error in google_drive_download for file {file_id}: {str(e)}")
+        return jsonify({'error': str(e), 'success': False}), 500
 
 # Google Calendar Routes
 

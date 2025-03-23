@@ -296,12 +296,30 @@ endblock %} {% block extra_css %}
       // Create a new graph instance
       graph = new graphology.Graph();
 
+      console.log("Initializing graph with data:", data);
+      console.log(
+        `Node counts: ${data.nodes.length} nodes, ${data.edges.length} edges`
+      );
+
+      // Count nodes by type
+      const nodeTypeCount = {};
+      data.nodes.forEach((node) => {
+        nodeTypeCount[node.type] = (nodeTypeCount[node.type] || 0) + 1;
+      });
+      console.log("Node types:", nodeTypeCount);
+
       // Add nodes
       data.nodes.forEach((node) => {
         const color = nodeColors[node.type] || nodeColors.default;
+
+        // Debug document nodes
+        if (node.type === "document") {
+          console.log(`Adding document node: ${node.id}, label: ${node.label}`);
+        }
+
         graph.addNode(node.id, {
           label: node.label,
-          size: 10,
+          size: node.type === "document" ? 12 : 10, // Make documents slightly larger
           color: color,
           type: node.type,
           originalColor: color,
@@ -318,6 +336,10 @@ endblock %} {% block extra_css %}
             color: "#ccc",
             data: edge.data,
           });
+        } else {
+          console.warn(
+            `Cannot add edge between ${edge.source} and ${edge.target} - one or both nodes missing`
+          );
         }
       });
 
@@ -390,13 +412,35 @@ endblock %} {% block extra_css %}
       $("#filter-all").addClass("active");
       activeFilter = "all";
       applyFilters();
+
+      // Add debugging for node types
+      console.log(
+        "Node types in graph:",
+        Object.fromEntries(
+          Object.entries(
+            Array.from(graph.nodes()).reduce((acc, node) => {
+              const type = graph.getNodeAttribute(node, "type");
+              acc[type] = (acc[type] || 0) + 1;
+              return acc;
+            }, {})
+          )
+        )
+      );
     }
 
     // Apply filters to the graph
     function applyFilters() {
       if (!graph) return;
 
+      const visibleNodes = new Set();
+      let hasDocumentNodes = false;
+
       graph.forEachNode((node, attributes) => {
+        // Check if we have document nodes at all
+        if (attributes.type === "document") {
+          hasDocumentNodes = true;
+        }
+
         let visible = true;
 
         // Apply type filter
@@ -407,19 +451,38 @@ endblock %} {% block extra_css %}
         // Apply search filter
         if (
           searchTerm &&
-          !attributes.label.toLowerCase().includes(searchTerm)
+          !attributes.label.toLowerCase().includes(searchTerm.toLowerCase())
         ) {
           visible = false;
         }
 
         graph.setNodeAttribute(node, "hidden", !visible);
 
-        // Hide edges connected to hidden nodes
-        graph.forEachEdge(node, (edge, attributes, source, target) => {
-          const sourceHidden = graph.getNodeAttribute(source, "hidden");
-          const targetHidden = graph.getNodeAttribute(target, "hidden");
-          graph.setEdgeAttribute(edge, "hidden", sourceHidden || targetHidden);
-        });
+        if (visible) {
+          visibleNodes.add(node);
+        }
+      });
+
+      // Log which nodes are visible by type
+      const visibleNodeTypes = Array.from(visibleNodes).reduce((acc, node) => {
+        const type = graph.getNodeAttribute(node, "type");
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {});
+      console.log("Visible nodes by type:", visibleNodeTypes);
+      console.log("Has document nodes:", hasDocumentNodes);
+
+      // Log the total number of document nodes
+      const documentNodeCount = Array.from(graph.nodes()).filter(
+        (node) => graph.getNodeAttribute(node, "type") === "document"
+      ).length;
+      console.log("Total document nodes:", documentNodeCount);
+
+      // Hide edges connected to hidden nodes
+      graph.forEachEdge((edge, attributes, source, target) => {
+        const sourceHidden = graph.getNodeAttribute(source, "hidden");
+        const targetHidden = graph.getNodeAttribute(target, "hidden");
+        graph.setEdgeAttribute(edge, "hidden", sourceHidden || targetHidden);
       });
 
       renderer.refresh();

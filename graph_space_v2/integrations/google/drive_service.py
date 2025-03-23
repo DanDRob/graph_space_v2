@@ -93,7 +93,8 @@ class GoogleDriveService:
         folder_id: Optional[str] = None,
         mime_types: Optional[List[str]] = None,
         query: Optional[str] = None,
-        max_results: int = 100
+        max_results: int = 500,
+        order_by: str = "modifiedTime desc"
     ) -> List[Dict[str, Any]]:
         """
         List files in Google Drive, optionally filtered by folder, type or query.
@@ -103,6 +104,7 @@ class GoogleDriveService:
             mime_types: List of MIME types to filter by
             query: Additional search query
             max_results: Maximum number of results to return
+            order_by: Sorting order (e.g., "modifiedTime desc", "name asc")
 
         Returns:
             List of file metadata
@@ -141,7 +143,8 @@ class GoogleDriveService:
                 pageSize=min(max_results - len(results),
                              100),  # Max 100 per page
                 fields="nextPageToken, files(id, name, mimeType, createdTime, modifiedTime, size, webViewLink, parents)",
-                pageToken=page_token
+                pageToken=page_token,
+                orderBy=order_by
             ).execute()
 
             # Add files to results
@@ -168,27 +171,31 @@ class GoogleDriveService:
         if not self._ensure_authenticated():
             raise ValueError("Not authenticated with Google Drive")
 
-        # Get the file metadata
-        file_metadata = self.service.files().get(fileId=file_id).execute()
+        try:
+            # Get the file metadata
+            file_metadata = self.service.files().get(fileId=file_id).execute()
 
-        # For Google Docs/Sheets/Slides, we need to export them
-        if file_metadata['mimeType'] in [
-            'application/vnd.google-apps.document',
-            'application/vnd.google-apps.spreadsheet',
-            'application/vnd.google-apps.presentation'
-        ]:
-            return self._export_google_doc(file_id, file_metadata['mimeType'])
+            # For Google Docs/Sheets/Slides, we need to export them
+            if file_metadata['mimeType'] in [
+                'application/vnd.google-apps.document',
+                'application/vnd.google-apps.spreadsheet',
+                'application/vnd.google-apps.presentation'
+            ]:
+                return self._export_google_doc(file_id, file_metadata['mimeType'])
 
-        # For regular files, we can download directly
-        request = self.service.files().get_media(fileId=file_id)
-        file_content = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_content, request)
+            # For regular files, we can download directly
+            request = self.service.files().get_media(fileId=file_id)
+            file_content = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_content, request)
 
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
 
-        return file_content.getvalue()
+            return file_content.getvalue()
+        except Exception as e:
+            print(f"Error downloading file {file_id}: {str(e)}")
+            raise ValueError(f"Failed to download file: {str(e)}")
 
     def _export_google_doc(self, file_id: str, mime_type: str) -> bytes:
         """
@@ -238,23 +245,35 @@ class GoogleDriveService:
         if not self.document_processor:
             raise ValueError("Document processor not initialized")
 
-        # Get file metadata
-        file_metadata = self.service.files().get(
-            fileId=file_id, fields="name,mimeType").execute()
-        file_name = file_metadata.get('name', 'untitled')
-        mime_type = file_metadata.get('mimeType', 'application/octet-stream')
+        try:
+            # Get file metadata
+            file_metadata = self.service.files().get(
+                fileId=file_id, fields="name,mimeType").execute()
+            file_name = file_metadata.get('name', 'untitled')
+            mime_type = file_metadata.get(
+                'mimeType', 'application/octet-stream')
 
-        # Download file content
-        content = self.download_file(file_id)
+            print(f"Importing file: {file_name} (type: {mime_type})")
 
-        # Process the document
-        document_id = self.document_processor.process_document(
-            content=content,
-            filename=file_name,
-            mime_type=mime_type
-        )
+            # Download file content
+            content = self.download_file(file_id)
 
-        return document_id
+            print(f"Successfully downloaded file, size: {len(content)} bytes")
+
+            # Process the document
+            document_id = self.document_processor.process_document(
+                content=content,
+                filename=file_name,
+                mime_type=mime_type
+            )
+
+            print(
+                f"Document processed successfully, document ID: {document_id}")
+            return document_id
+
+        except Exception as e:
+            print(f"Error importing document from Google Drive: {str(e)}")
+            raise ValueError(f"Failed to import document: {str(e)}")
 
     def set_credentials(self, credentials):
         """

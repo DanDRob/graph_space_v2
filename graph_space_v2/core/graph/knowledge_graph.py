@@ -115,9 +115,10 @@ class KnowledgeGraph:
                 title=task_data.get("title", ""),
                 description=task_data.get("description", ""),
                 status=task_data.get("status", ""),
-                due_date=task_data.get("due_date", ""),
                 tags=task_data.get("tags", []),
-                project=task_data.get("project", "")
+                due_date=task_data.get("due_date", ""),
+                created_at=task_data.get("created_at", ""),
+                updated_at=task_data.get("updated_at", "")
             )
             node_count += 1
 
@@ -132,59 +133,44 @@ class KnowledgeGraph:
                 email=contact_data.get("email", ""),
                 phone=contact_data.get("phone", ""),
                 organization=contact_data.get("organization", ""),
-                tags=contact_data.get("tags", [])
+                tags=contact_data.get("tags", []),
+                created_at=contact_data.get("created_at", "")
             )
             node_count += 1
 
         # Add documents
-        documents_added = 0
-        for document_data in self.data.get("documents", []):
-            node_id = f"document_{document_data.get('id')}"
+        for doc_data in self.data.get("documents", []):
+            node_id = f"document_{doc_data.get('id')}"
+            # Make sure document nodes have all necessary properties
+            tags = doc_data.get("tags", []) or []
+            topics = doc_data.get("topics", []) or []
 
-            # Ensure we have tags (combine topics and tags if available)
-            tags = document_data.get("tags", [])
-            topics = document_data.get("topics", [])
-
-            # If tags is None, initialize as empty list
-            if tags is None:
-                tags = []
-
-            # If topics is None, initialize as empty list
-            if topics is None:
-                topics = []
-
-            # Combine tags and topics, removing duplicates
-            combined_tags = list(set(tags + topics))
-
-            # Ensure we have at least one tag
-            if not combined_tags and document_data.get("title"):
-                # Use words from title as basic tags
-                title_words = document_data.get("title", "").lower().split()
-                combined_tags = [w for w in title_words if len(w) > 3][:3]
-
-            # Add "document" tag if not present
-            if "document" not in combined_tags:
-                combined_tags.append("document")
-
-            print(f"Adding document node {node_id} with tags: {combined_tags}")
+            # Print debug info for each document
+            print(
+                f"Adding document node: {node_id}, title: {doc_data.get('title', 'Untitled')}")
 
             self.graph.add_node(
                 node_id,
                 type="document",
-                data=document_data,
-                title=document_data.get("title", ""),
-                content=document_data.get("content", ""),
-                summary=document_data.get("summary", ""),
+                data=doc_data,
+                title=doc_data.get("title", ""),
+                content=doc_data.get("content", ""),
+                tags=tags,
                 topics=topics,
-                tags=combined_tags,  # Use combined tags
-                created_at=document_data.get("processed_at", ""),
-                updated_at=document_data.get("processed_at", "")
+                summary=doc_data.get("summary", ""),
+                created_at=doc_data.get("created_at", ""),
+                processed_at=doc_data.get("processed_at", "")
             )
             node_count += 1
-            documents_added += 1
 
-        print(
-            f"Added {node_count} nodes to the graph ({documents_added} documents)")
+        print(f"Added {node_count} nodes to the knowledge graph")
+
+        # Print debug info about nodes by type
+        node_types = {}
+        for _, node_data in self.graph.nodes(data=True):
+            node_type = node_data.get('type', 'unknown')
+            node_types[node_type] = node_types.get(node_type, 0) + 1
+        print(f"Node types in graph: {node_types}")
 
     def _add_edges_for_notes(self):
         """Add edges between notes based on shared tags and other relationships."""

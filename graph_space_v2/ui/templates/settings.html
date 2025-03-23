@@ -245,15 +245,13 @@
         return response.json();
       })
       .then((data) => {
-        if (data.auth_url) {
-          // Redirect to Google OAuth page
-          window.location.href = data.auth_url;
-        } else {
-          console.error("Error starting Google authentication:", data.error);
-          alert(
-            "Error connecting to Google: " + (data.error || "Unknown error")
-          );
-        }
+        alert(
+          "Authentication started. Please complete the process in the browser window that opens automatically. This page will refresh automatically after 5 seconds."
+        );
+        // Refresh the page after 5 seconds to show the updated status
+        setTimeout(() => {
+          window.location.reload();
+        }, 5000);
       })
       .catch((error) => {
         console.error("Error starting Google auth:", error);
