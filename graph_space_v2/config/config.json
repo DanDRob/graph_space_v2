@@ -1,0 +1,64 @@
+{
+  "api": {
+    "host": "127.0.0.1",
+    "port": 5000,
+    "debug": true,
+    "secret_key": "development_secret_key",
+    "jwt_expiration_days": 7
+  },
+  "database": {
+    "type": "json",
+    "path": "${data_dir}/user_data.json",
+    "tasks_path": "${data_dir}/tasks.json"
+  },
+  "storage": {
+    "uploads_dir": "${data_dir}/uploads",
+    "documents_dir": "${data_dir}/documents",
+    "temp_dir": "${data_dir}/temp",
+    "max_upload_size_mb": 16
+  },
+  "embedding": {
+    "model": "sentence-transformers/all-mpnet-base-v2",
+    "dimension": 768,
+    "batch_size": 32
+  },
+  "llm": {
+    "api_enabled": true,
+    "provider": "deepseek",
+    "api_base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-ai/deepseek-chat-v1",
+    "fallback_provider": "meta",
+    "fallback_model": "meta-llama/Llama-3-8B-Instruct",
+    "context_window": 16384,
+    "temperature": 0.7,
+    "max_tokens": 1024
+  },
+  "document_processing": {
+    "max_workers": 4,
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "allowed_extensions": ["pdf", "docx", "txt", "md", "csv", "xlsx"]
+  },
+  "gnn": {
+    "input_dim": 64,
+    "hidden_dim": 128,
+    "output_dim": 64,
+    "learning_rate": 0.01,
+    "epochs": 50,
+    "batch_size": 64
+  },
+  "calendar": {
+    "sync_enabled": false,
+    "default_provider": "google",
+    "sync_interval_minutes": 60
+  },
+  "google_drive": {
+    "cache_expiry": 3600
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/graphspace.log",
+    "max_size_mb": 10,
+    "backup_count": 5
+  }
+}

@@ -1,0 +1,340 @@
+{% extends 'base.html' %} {% block title %}Tasks - GraphSpace{% endblock %} {%
+block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1><i class="fas fa-tasks text-success me-2"></i> Tasks</h1>
+  <button
+    id="add-task-btn"
+    class="btn btn-success"
+    data-bs-toggle="modal"
+    data-bs-target="#taskModal"
+  >
+    <i class="fas fa-plus me-1"></i> Add Task
+  </button>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-4">
+    <div class="input-group">
+      <span class="input-group-text"><i class="fas fa-search"></i></span>
+      <input
+        type="text"
+        id="search-tasks"
+        class="form-control"
+        placeholder="Search tasks..."
+      />
+    </div>
+  </div>
+  <div class="col-md-3">
+    <select id="filter-status" class="form-select">
+      <option value="">All statuses</option>
+      <option value="pending">Pending</option>
+      <option value="in-progress">In Progress</option>
+      <option value="completed">Completed</option>
+    </select>
+  </div>
+  <div class="col-md-3">
+    <select id="filter-priority" class="form-select">
+      <option value="">All priorities</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+  </div>
+  <div class="col-md-2">
+    <select id="filter-tags" class="form-select">
+      <option value="">All tags</option>
+      <!-- Tags will be loaded dynamically -->
+    </select>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body p-0">
+    <div id="tasks-container" class="list-group list-group-flush">
+      <!-- Tasks will be loaded dynamically -->
+      <div class="list-group-item text-center py-5" id="tasks-loading">
+        <div class="spinner-border text-success" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading tasks...</p>
+      </div>
+      <div class="list-group-item text-center py-5 d-none" id="tasks-empty">
+        <i class="fas fa-tasks text-muted fa-3x mb-3"></i>
+        <h5>No tasks found</h5>
+        <p>Create your first task to get started!</p>
+        <button
+          class="btn btn-success"
+          data-bs-toggle="modal"
+          data-bs-target="#taskModal"
+        >
+          <i class="fas fa-plus me-1"></i> Add Task
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pagination -->
+<nav aria-label="Tasks pagination" class="d-flex justify-content-center">
+  <ul class="pagination" id="tasks-pagination">
+    <!-- Pagination will be added dynamically -->
+  </ul>
+</nav>
+
+<!-- Task Modal -->
+<div
+  class="modal fade"
+  id="taskModal"
+  tabindex="-1"
+  aria-labelledby="taskModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="taskModalLabel">Add New Task</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <form id="task-form">
+          <input type="hidden" id="task-id" />
+          <div class="mb-3">
+            <label for="task-title" class="form-label">Title</label>
+            <input
+              type="text"
+              class="form-control"
+              id="task-title"
+              placeholder="Task title"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label for="task-description" class="form-label">Description</label>
+            <textarea
+              class="form-control"
+              id="task-description"
+              rows="3"
+              placeholder="Task description"
+            ></textarea>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="task-status" class="form-label">Status</label>
+              <select class="form-select" id="task-status">
+                <option value="pending">Pending</option>
+                <option value="in-progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label for="task-priority" class="form-label">Priority</label>
+              <select class="form-select" id="task-priority">
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="task-due-date" class="form-label">Due Date</label>
+              <input type="date" class="form-control" id="task-due-date" />
+            </div>
+            <div class="col-md-6">
+              <label for="task-project" class="form-label">Project</label>
+              <input
+                type="text"
+                class="form-control"
+                id="task-project"
+                placeholder="Project name"
+              />
+            </div>
+          </div>
+          <div class="mb-3">
+            <label for="task-tags" class="form-label">Tags</label>
+            <input
+              type="text"
+              class="form-control"
+              id="task-tags"
+              placeholder="Enter tags separated by commas"
+            />
+            <div class="form-text">Example: work, important, project-x</div>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                id="task-recurring"
+              />
+              <label class="form-check-label" for="task-recurring">
+                Recurring Task
+              </label>
+            </div>
+          </div>
+          <div id="recurring-options" class="mb-3 d-none">
+            <div class="row">
+              <div class="col-md-6">
+                <label for="recurring-frequency" class="form-label"
+                  >Frequency</label
+                >
+                <select class="form-select" id="recurring-frequency">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label for="recurring-start-date" class="form-label"
+                  >Start Date</label
+                >
+                <input
+                  type="date"
+                  class="form-control"
+                  id="recurring-start-date"
+                />
+              </div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                id="task-calendar-sync"
+              />
+              <label class="form-check-label" for="task-calendar-sync">
+                Sync with Calendar
+              </label>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-danger me-auto d-none"
+          id="delete-task-btn"
+        >
+          <i class="fas fa-trash me-1"></i> Delete
+        </button>
+        <button type="button" class="btn btn-success" id="save-task-btn">
+          <i class="fas fa-save me-1"></i> Save Task
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Task View Modal -->
+<div
+  class="modal fade"
+  id="viewTaskModal"
+  tabindex="-1"
+  aria-labelledby="viewTaskModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="viewTaskModalLabel">Task Details</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <h3 id="view-task-title"></h3>
+          <span id="view-task-status" class="badge bg-secondary"></span>
+        </div>
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <p>
+              <strong>Due Date:</strong> <span id="view-task-due-date"></span>
+            </p>
+            <p>
+              <strong>Priority:</strong> <span id="view-task-priority"></span>
+            </p>
+            <p>
+              <strong>Project:</strong> <span id="view-task-project"></span>
+            </p>
+          </div>
+          <div class="col-md-6">
+            <p>
+              <strong>Created:</strong> <span id="view-task-created"></span>
+            </p>
+            <p>
+              <strong>Recurring:</strong> <span id="view-task-recurring"></span>
+            </p>
+            <p><strong>Tags:</strong> <span id="view-task-tags"></span></p>
+          </div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header">Description</div>
+          <div class="card-body" id="view-task-description"></div>
+        </div>
+
+        <h5 class="mt-4">Related Items</h5>
+        <div id="related-items" class="list-group">
+          <!-- Related items will be loaded dynamically -->
+          <div class="list-group-item text-center py-3" id="related-loading">
+            <div
+              class="spinner-border spinner-border-sm text-success"
+              role="status"
+            >
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <span class="ms-2">Loading related items...</span>
+          </div>
+          <div
+            class="list-group-item text-center py-3 d-none"
+            id="related-empty"
+          >
+            No related items found
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Close
+        </button>
+        <button type="button" class="btn btn-success" id="edit-task-btn">
+          <i class="fas fa-edit me-1"></i> Edit
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary ms-2"
+          id="complete-task-btn"
+        >
+          <i class="fas fa-check me-1"></i> Mark Complete
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<script src="{{ url_for('static', filename='js/components/tasks.js') }}"></script>
+<script>
+  // Toggle recurring options
+  $(document).ready(function () {
+    $("#task-recurring").change(function () {
+      if ($(this).is(":checked")) {
+        $("#recurring-options").removeClass("d-none");
+      } else {
+        $("#recurring-options").addClass("d-none");
+      }
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,228 @@
+{% extends 'base.html' %} {% block title %}GraphSpace - Knowledge Management
+Assistant{% endblock %} {% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-10">
+    <div class="card shadow-sm mb-4">
+      <div class="card-body p-4">
+        <h1 class="text-center mb-4">
+          <i class="fas fa-project-diagram text-primary me-2"></i>
+          GraphSpace
+        </h1>
+        <p class="lead text-center">
+          Your intelligent knowledge graph assistant for managing information,
+          tasks, and connections.
+        </p>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <h4 class="mb-3">Ask a question</h4>
+            <form id="query-form">
+              <div class="mb-3">
+                <textarea
+                  class="form-control"
+                  id="query-text"
+                  rows="3"
+                  placeholder="What would you like to know? (e.g., 'What tasks are due this week?', 'Summarize my notes about project X', etc.)"
+                  required
+                ></textarea>
+              </div>
+              <div class="text-end">
+                <button type="submit" class="btn btn-primary">
+                  <i class="fas fa-search me-1"></i> Search
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="query-result" class="card d-none">
+          <div class="card-body">
+            <h4 class="card-title">Results</h4>
+            <div id="result-content" class="mb-3"></div>
+
+            <h5 class="mt-4">Sources</h5>
+            <div id="result-sources" class="list-group"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-4 mb-4">
+        <div class="card h-100 shadow-sm hover-card">
+          <div class="card-body text-center p-4">
+            <i class="fas fa-sticky-note text-primary fa-3x mb-3"></i>
+            <h3>Notes</h3>
+            <p>
+              Create, organize, and search through your notes and information.
+            </p>
+            <a href="/notes" class="btn btn-outline-primary mt-2">
+              Manage Notes
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4 mb-4">
+        <div class="card h-100 shadow-sm hover-card">
+          <div class="card-body text-center p-4">
+            <i class="fas fa-tasks text-success fa-3x mb-3"></i>
+            <h3>Tasks</h3>
+            <p>Track your to-dos, set due dates, and manage recurring tasks.</p>
+            <a href="/tasks" class="btn btn-outline-success mt-2">
+              Manage Tasks
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4 mb-4">
+        <div class="card h-100 shadow-sm hover-card">
+          <div class="card-body text-center p-4">
+            <i class="fas fa-file-alt text-info fa-3x mb-3"></i>
+            <h3>Documents</h3>
+            <p>Upload, analyze, and extract knowledge from your documents.</p>
+            <a href="/documents" class="btn btn-outline-info mt-2">
+              Manage Documents
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm hover-card">
+          <div class="card-body text-center p-4">
+            <i class="fas fa-address-book text-warning fa-3x mb-3"></i>
+            <h3>Contacts</h3>
+            <p>
+              Manage your contacts and their relationships to your knowledge
+              graph.
+            </p>
+            <a href="/contacts" class="btn btn-outline-warning mt-2">
+              Manage Contacts
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm hover-card">
+          <div class="card-body text-center p-4">
+            <i class="fas fa-project-diagram text-secondary fa-3x mb-3"></i>
+            <h3>Knowledge Graph</h3>
+            <p>Visualize and explore connections between your information.</p>
+            <a href="/graph" class="btn btn-outline-secondary mt-2">
+              Explore Graph
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block extra_js %}
+<script>
+  $(document).ready(function () {
+    $("#query-form").on("submit", function (e) {
+      e.preventDefault();
+      const query = $("#query-text").val();
+
+      if (!query.trim()) return;
+
+      // Show loading indicator
+      $("#query-form button").html(
+        '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...'
+      );
+      $("#query-form button").prop("disabled", true);
+
+      // Make API request
+      $.ajax({
+        url: "/api/query",
+        method: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({
+          query: query,
+        }),
+        success: function (response) {
+          // Display results
+          $("#result-content").html(response.answer || response.response);
+
+          // Display sources if available
+          const sources = response.sources || response.context || [];
+          $("#result-sources").empty();
+
+          if (sources.length > 0) {
+            sources.forEach(function (source) {
+              let sourceType = "text-secondary";
+              let sourceIcon = "file-text";
+
+              if (source.type === "note") {
+                sourceType = "text-primary";
+                sourceIcon = "sticky-note";
+              } else if (source.type === "task") {
+                sourceType = "text-success";
+                sourceIcon = "tasks";
+              } else if (source.type === "contact") {
+                sourceType = "text-warning";
+                sourceIcon = "user";
+              } else if (source.type === "document") {
+                sourceType = "text-info";
+                sourceIcon = "file-alt";
+              }
+
+              const sourceItem = `
+                                <div class="list-group-item list-group-item-action">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1">
+                                            <i class="fas fa-${sourceIcon} ${sourceType} me-2"></i>
+                                            ${source.title || "Untitled"}
+                                        </h6>
+                                        <small>${
+                                          source.relevance
+                                            ? "Relevance: " +
+                                              (source.relevance * 100).toFixed(
+                                                0
+                                              ) +
+                                              "%"
+                                            : ""
+                                        }</small>
+                                    </div>
+                                    <p class="mb-1">${
+                                      source.content || source.preview || ""
+                                    }</p>
+                                </div>
+                            `;
+
+              $("#result-sources").append(sourceItem);
+            });
+          } else {
+            $("#result-sources").html(
+              '<div class="list-group-item">No specific sources used</div>'
+            );
+          }
+
+          // Show results
+          $("#query-result").removeClass("d-none");
+        },
+        error: function (error) {
+          console.error("Error processing query:", error);
+          $("#result-content").html(
+            '<div class="alert alert-danger">Error processing your query. Please try again.</div>'
+          );
+          $("#result-sources").empty();
+          $("#query-result").removeClass("d-none");
+        },
+        complete: function () {
+          // Reset button
+          $("#query-form button").html(
+            '<i class="fas fa-search me-1"></i> Search'
+          );
+          $("#query-form button").prop("disabled", false);
+        },
+      });
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,4 @@
+from graph_space_v2.integrations.document.extractors.text_extractor import TextExtractor
+from graph_space_v2.integrations.document.extractors.pdf_extractor import PDFExtractor
+from graph_space_v2.integrations.document.extractors.docx_extractor import DocxExtractor
+from graph_space_v2.integrations.document.extractors.base import DocumentInfo, ExtractorFactory

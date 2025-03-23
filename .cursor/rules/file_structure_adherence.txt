@@ -1,0 +1,139 @@
+graph_space/
+│
+├── core/
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── base.py                # Base model class with common functionality
+│   │   ├── note.py                # Note model definition
+│   │   ├── task.py                # Task model definition
+│   │   └── contact.py             # Contact model definition
+│   │
+│   ├── graph/
+│   │   ├── __init__.py
+│   │   ├── knowledge_graph.py     # Core graph structure
+│   │   ├── node_manager.py        # Node creation and management
+│   │   └── relationship.py        # Edge/relationship management
+│   │
+│   └── services/
+│       ├── __init__.py
+│       ├── note_service.py        # Note business logic
+│       ├── task_service.py        # Task business logic
+│       └── query_service.py       # Graph querying logic
+│
+├── ai/
+│   ├── __init__.py
+│   ├── embedding/
+│   │   ├── __init__.py
+│   │   ├── embedding_service.py   # Unified embedding interface
+│   │   └── vector_store.py        # Vector storage and retrieval
+│   │
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   ├── llm_service.py         # Unified LLM interface
+│   │   ├── prompts.py             # System prompts
+│   │   └── providers/             # Different LLM providers
+│   │       ├── __init__.py
+│   │       ├── deepseek.py        # DeepSeek implementation
+│   │       ├── openai.py          # OpenAI implementation
+│   │       └── local_llm.py       # Local LLM implementation
+│   │
+│   ├── gnn/
+│   │   ├── __init__.py
+│   │   ├── gnn_model.py           # GNN model implementation
+│   │   └── trainer.py             # Training logic
+│   │
+│   └── rag/
+│       ├── __init__.py
+│       ├── retriever.py           # Context retrieval
+│       └── generator.py           # Answer generation
+│
+├── integrations/
+│   ├── __init__.py
+│   ├── document/
+│   │   ├── __init__.py
+│   │   ├── document_processor.py  # Main document processing
+│   │   ├── extractors/            # Text extraction from different formats
+│   │   │   ├── __init__.py
+│   │   │   ├── pdf_extractor.py
+│   │   │   ├── docx_extractor.py
+│   │   │   └── text_extractor.py
+│   │   └── pipeline.py            # Processing pipeline
+│   │
+│   ├── calendar/
+│   │   ├── __init__.py
+│   │   ├── calendar_service.py    # Calendar interface
+│   │   ├── task_sync.py           # Task-calendar synchronization
+│   │   └── providers/             # Calendar providers
+│   │       ├── __init__.py
+│   │       ├── google_calendar.py
+│   │       └── ical.py
+│   │
+│   └── google/
+│       ├── __init__.py
+│       ├── drive_service.py       # Google Drive integration
+│       └── auth.py                # Google authentication
+│
+├── api/
+│   ├── __init__.py
+│   ├── app.py                     # Main Flask application
+│   ├── middleware/
+│   │   ├── __init__.py
+│   │   ├── auth.py                # Authentication middleware
+│   │   └── validation.py          # Request validation
+│   │
+│   └── routes/
+│       ├── __init__.py
+│       ├── notes.py               # Note endpoints
+│       ├── tasks.py               # Task endpoints
+│       ├── contacts.py            # Contact endpoints
+│       ├── documents.py           # Document endpoints
+│       └── query.py               # Knowledge graph query endpoints
+│
+├── ui/
+│   ├── __init__.py
+│   ├── templates/
+│   │   ├── base.html              # Base template
+│   │   ├── index.html             # Homepage
+│   │   ├── notes.html             # Notes view
+│   │   └── tasks.html             # Tasks view
+│   │
+│   └── static/
+│       ├── css/
+│       │   └── styles.css
+│       ├── js/
+│       │   ├── app.js
+│       │   └── components/
+│       │       ├── notes.js
+│       │       └── tasks.js
+│       └── images/
+│
+├── utils/
+│   ├── __init__.py
+│   ├── config/
+│   │   ├── __init__.py
+│   │   ├── config_loader.py       # Configuration loading
+│   │   └── defaults.py            # Default configurations
+│   │
+│   ├── errors/
+│   │   ├── __init__.py
+│   │   └── exceptions.py          # Custom exceptions
+│   │
+│   └── helpers/
+│       ├── __init__.py
+│       ├── date_utils.py          # Date/time utilities
+│       ├── file_utils.py          # File handling
+│       └── migration_utils.py     # Data migration
+│
+├── data/                          # Data storage directory
+│   ├── user_data.json             # User data
+│   └── documents/                 # Processed documents
+│
+├── config/                        # Configuration files
+│   └── config.json                # Main configuration
+│
+├── __init__.py                    # Package initialization
+├── graphspace.py                  # Main application class
+├── run.py                         # Application entry point
+├── requirements.txt               # Dependencies
+├── setup.py                       # Package setup
+└── README.md                      # Documentation
