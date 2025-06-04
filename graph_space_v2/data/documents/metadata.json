@@ -64,5 +64,83 @@
       "Daniel Roberts",
       "Team #7"
     ]
+  },
+  "test.txt": {
+    "title": "test.txt",
+    "file_path": "dummy/test.txt",
+    "file_type": "txt",
+    "processed_at": "2025-06-04T21:41:47.115826",
+    "content_length": 25,
+    "chunks": 1,
+    "topics": [
+      "tag1",
+      "tag2"
+    ],
+    "tags": [
+      "tag1",
+      "tag2"
+    ]
+  },
+  "test.pdf": {
+    "title": "test.pdf",
+    "file_path": "dummy/test.pdf",
+    "file_type": "pdf",
+    "processed_at": "2025-06-04T21:41:47.125391",
+    "content_length": 20,
+    "chunks": 1,
+    "topics": [
+      "tag1",
+      "tag2"
+    ],
+    "tags": [
+      "tag1",
+      "tag2"
+    ]
+  },
+  "test.docx": {
+    "title": "test.docx",
+    "file_path": "dummy/test.docx",
+    "file_type": "docx",
+    "processed_at": "2025-06-04T21:41:47.133551",
+    "content_length": 21,
+    "chunks": 1,
+    "topics": [
+      "tag1",
+      "tag2"
+    ],
+    "tags": [
+      "tag1",
+      "tag2"
+    ]
+  },
+  "long_doc.txt": {
+    "title": "long_doc.txt",
+    "file_path": "dummy/long_doc.txt",
+    "file_type": "txt",
+    "processed_at": "2025-06-04T21:41:47.148645",
+    "content_length": 32,
+    "chunks": 2,
+    "topics": [
+      "tag1",
+      "tag2"
+    ],
+    "tags": [
+      "tag1",
+      "tag2"
+    ]
+  },
+  "another_doc.txt": {
+    "title": "another_doc.txt",
+    "file_path": "dummy/another_doc.txt",
+    "file_type": "txt",
+    "processed_at": "2025-06-04T21:41:47.156433",
+    "content_length": 23,
+    "chunks": 1,
+    "topics": [
+      "kg_tag"
+    ],
+    "tags": [
+      "kg_tag"
+    ]
   }
 }

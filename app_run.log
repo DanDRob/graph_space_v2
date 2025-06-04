@@ -1,0 +1,52 @@
+INFO:faiss.loader:Loading faiss with AVX2 support.
+INFO:faiss.loader:Successfully loaded faiss with AVX2 support.
+Environment variables loaded. Google integration: false
+Current directory: /app/graph_space_v2
+Parent directory: /app
+Python path: ['/app', '/app/graph_space_v2', '/usr/lib/python310.zip', '/usr/lib/python3.10', '/usr/lib/python3.10/lib-dynload', '/home/swebot/.local/lib/python3.10/site-packages', '/usr/local/lib/python3.10/dist-packages', '/usr/lib/python3/dist-packages']
+Attempting to import KnowledgeGraph...
+Successfully imported KnowledgeGraph
+Attempting to import EmbeddingService...
+Successfully imported EmbeddingService
+Attempting to import LLMService...
+Successfully imported LLMService
+Attempting to import GraphSpace...
+Successfully imported GraphSpace
+Running from: /app/graph_space_v2/run.py
+Initializing directories...
+Ensuring data directory exists: /app/graph_space_v2/data
+Data directory exists: True
+Ensuring uploads directory exists: /app/graph_space_v2/data/uploads
+Uploads directory exists: True
+Ensuring documents directory exists: /app/graph_space_v2/data/documents
+Documents directory exists: True
+Ensuring temp directory exists: /app/graph_space_v2/data/temp
+Temp directory exists: True
+Directories initialized.
+Checking data file structure...
+Data file structure verified.
+Google integration is disabled.
+Adding nodes to the knowledge graph...
+Added 0 nodes to the knowledge graph
+Node types in graph: {}
+Building cross-entity edges...
+Found 0 document nodes to process
+Created 0 cross-entity edges in total
+Torch or SentenceTransformers not available. EmbeddingService will use random embeddings.
+Loaded 9 embeddings from /app/graph_space_v2/data/embeddings/embeddings.json
+Error building index: No module named 'torch.sparse'
+DeepSeek API key set: True
+Initializing DeepSeek client with base_url: https://api.deepseek.com
+DeepSeek client initialized successfully
+Upload folder configured at: /app/graph_space_v2/data/uploads
+Upload folder exists: True
+Starting Graph Space server on http://127.0.0.1:5000
+ * Serving Flask app 'graph_space_v2.api.app'
+ * Debug mode: off
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug:127.0.0.1 - - [04/Jun/2025 21:13:21] "GET /api/notes HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [04/Jun/2025 21:13:21] "GET /api/tasks HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [04/Jun/2025 21:13:21] "GET /api/graphdata_test HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [04/Jun/2025 21:13:21] "GET /api/hello_query HTTP/1.1" 200 -

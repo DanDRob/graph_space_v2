@@ -1,7 +1,14 @@
 from typing import Dict, List, Any, Optional, Tuple, Union
-import torch
-import numpy as np
-from sentence_transformers import SentenceTransformer
+import numpy as np # numpy should always be available
+try:
+    import torch
+    from sentence_transformers import SentenceTransformer
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    # Provide dummy types or fallbacks if necessary for type hinting or basic functionality
+    SentenceTransformer = None # type: ignore
+
 import os
 import json
 import uuid
@@ -56,19 +63,24 @@ class EmbeddingService:
         ensure_dir_exists(self.storage_path)
 
         # Determine device
-        if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            self.device = device
+        if TORCH_AVAILABLE:
+            if device is None:
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            else:
+                self.device = device
 
-        # Initialize model
-        try:
-            self.model = SentenceTransformer(model_name, device=self.device)
-            print(f"Loaded embedding model: {model_name} on {self.device}")
-        except Exception as e:
-            print(f"Error loading embedding model: {e}")
-            print("Using a randomly initialized embedding function instead.")
+            # Initialize model
+            try:
+                self.model = SentenceTransformer(model_name, device=self.device)
+                print(f"Loaded embedding model: {model_name} on {self.device}")
+            except Exception as e:
+                print(f"Error loading embedding model: {e}")
+                print("Using a randomly initialized embedding function instead.")
+                self.model = None
+        else:
+            self.device = "cpu"
             self.model = None
+            print("Torch or SentenceTransformers not available. EmbeddingService will use random embeddings.")
 
         # Create storage directory if it doesn't exist
         os.makedirs(self.storage_path, exist_ok=True)
@@ -98,7 +110,7 @@ class EmbeddingService:
         if not text.strip():
             return np.zeros(self.dimension)
 
-        if self.model is None:
+        if not TORCH_AVAILABLE or self.model is None:
             # Fallback to random embeddings
             return np.random.randn(self.dimension).astype(np.float32)
 
@@ -122,7 +134,7 @@ class EmbeddingService:
         if not texts:
             return []
 
-        if self.model is None:
+        if not TORCH_AVAILABLE or self.model is None:
             # Fallback to random embeddings
             return [np.random.randn(self.dimension).astype(np.float32) for _ in texts]
 
@@ -323,6 +335,11 @@ class EmbeddingService:
             self.index = faiss.IndexFlatL2(self.dimension)
 
             # Add embeddings to the index
+            if not TORCH_AVAILABLE:
+                self.index = None
+                print("Cannot build FAISS index: Torch not available.")
+                return
+
             embeddings_array = np.stack(
                 [item.embedding for item in self.embeddings.values()])
 

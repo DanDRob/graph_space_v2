@@ -4,6 +4,9 @@ import traceback
 
 query_bp = Blueprint('query', __name__)
 
+@query_bp.route('/hello_query', methods=['GET'])
+def hello_query():
+    return jsonify({"message": "Hello from Query Blueprint"})
 
 @query_bp.route('/query', methods=['POST'])
 @validate_json_request
@@ -24,10 +27,10 @@ def query():
         return jsonify({'error': str(e)}), 500
 
 
-@query_bp.route('/graph_data', methods=['GET'])
-def graph_data():
+@query_bp.route('/graphdata_test', methods=['GET']) # Renamed route
+def get_graph_data_test(): # Renamed function
     try:
-        print("GET /graph_data - Retrieving knowledge graph visualization data")
+        print("GET /graphdata_test - Retrieving knowledge graph visualization data") # Updated print
         graphspace = current_app.config['GRAPHSPACE']
 
         # Force a graph rebuild to ensure all connections are up-to-date
@@ -250,7 +253,7 @@ def search():
         return jsonify({'error': str(e)}), 500
 
 
-@query_bp.route('/search', methods=['GET'])
+@query_bp.route('/search_all', methods=['GET'])  # Renamed route to avoid conflict
 def search_all():
     try:
         query = request.args.get('q', '')
