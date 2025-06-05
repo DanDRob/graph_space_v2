@@ -4,8 +4,9 @@ import importlib
 import json
 import time
 from abc import ABC, abstractmethod
+import logging # Added
 
-from graph_space_v2.utils.errors.exceptions import LLMError
+from graph_space_v2.utils.errors.exceptions import LLMError, LLMServiceError
 
 
 class BaseLLMProvider(ABC):
@@ -24,6 +25,8 @@ class BaseLLMProvider(ABC):
 
 class LLMService:
     """Service for interacting with large language models."""
+
+    logger = logging.getLogger(__name__) # Added logger instance
 
     def __init__(
         self,
@@ -48,9 +51,27 @@ class LLMService:
         self.fallback_model_name = fallback_model_name
         self.use_api = use_api
         self.provider_name = provider
+        self.enabled = True  # Default to enabled
 
         # Initialize provider
         self.provider = self._get_provider(provider)
+
+        # Disable service if provider is DummyProvider or if API key is missing when required
+        if isinstance(self.provider, DummyProvider):
+            self.logger.critical("LLMService is operating with a DummyProvider. Disabling LLMService.")
+            self.enabled = False
+        elif self.use_api and self.provider_name not in ["local", "dummy"]: # Assuming 'local' and 'dummy' don't need API keys
+            if not self.api_key:
+                self.logger.warning(
+                    f"LLMService disabled: API key not provided for '{self.provider_name}' provider (and use_api is True).")
+                self.enabled = False
+            else:
+                 self.logger.info(f"LLMService initialized with provider '{self.provider_name}' and API key.")
+        elif not self.use_api and self.provider_name == "local":
+             self.logger.info(f"LLMService initialized with local provider '{self.provider_name}'.")
+        else:
+            self.logger.info(f"LLMService initialized with provider '{self.provider_name}'. API key check skipped or not applicable.")
+
 
         # Store system prompts
         self.system_prompts = {
@@ -87,18 +108,28 @@ class LLMService:
                 use_api=self.use_api
             )
         except (ImportError, AttributeError) as e:
-            print(f"Error initializing provider {provider_name}: {e}")
+            self.logger.error(f"Error initializing LLM provider '{provider_name}': {e}. Attempting fallback.", exc_info=True)
 
             # Fall back to local provider if available
             try:
                 from graph_space_v2.ai.llm.providers.local_llm import LocalLLMProvider
+                self.logger.info(f"Primary provider '{provider_name}' failed. Falling back to LocalLLMProvider with model '{self.fallback_model_name}'.")
                 return LocalLLMProvider(
                     model_name=self.fallback_model_name,
-                    use_api=False
+                    use_api=False # Local provider implies not using external API in the same way
                 )
             except ImportError:
+                self.logger.warning("LocalLLMProvider not available as a fallback.")
                 # No provider available, use a dummy provider
-                return DummyProvider()
+                self.logger.warning("No functional LLM provider found after primary and fallback attempts. Using DummyProvider.")
+                dummy_provider = DummyProvider()
+                # isinstance check is redundant as we just created it.
+                self.logger.critical("LLMService is operating with a DummyProvider. All LLM-dependent functionality will be severely limited or non-operational.")
+                return dummy_provider
+        except Exception as e_init: # Catch any other error during provider initialization
+            self.logger.critical(f"Critical error during initialization of LLM provider '{provider_name}': {e_init}. Using DummyProvider.", exc_info=True)
+            return DummyProvider()
+
 
     def generate_text(self, prompt: str, max_tokens: int = 500, temperature: float = 0.7, retry_count: int = 2) -> str:
         """
@@ -113,14 +144,25 @@ class LLMService:
         Returns:
             Generated text
         """
+        if not self.enabled:
+            self.logger.warning("LLMService is disabled. Skipping generate_text operation. Returning empty string.")
+            return ""
+
+        # This check for DummyProvider is now partly handled by self.enabled, but can remain as a safeguard
+        # or for more specific behavior if DummyProvider is sometimes used even when enabled=True (e.g. for specific tests)
+        if isinstance(self.provider, DummyProvider):
+             self.logger.warning("LLMService.generate_text is using DummyProvider. Text generation will be a placeholder.")
+             return "Placeholder response from DummyProvider." # More explicit than empty string if Dummy is active
         try:
             return self.provider.generate_text(prompt, max_tokens, temperature)
         except Exception as e:
+            self.logger.warning(f"Error generating text (prompt: '{prompt[:50]}...'). Attempting retry {retry_count}/{self.provider.retry_attempts if hasattr(self.provider, 'retry_attempts') else 2}.", exc_info=True)
             if retry_count > 0:
-                print(f"Error generating text: {e}, retrying...")
                 time.sleep(1)  # Wait before retry
                 return self.generate_text(prompt, max_tokens, temperature, retry_count - 1)
-            raise LLMError(f"Error generating text: {e}")
+            self.logger.error(f"Failed to generate text for prompt '{prompt[:50]}...' after multiple retries: {e}", exc_info=True)
+            raise LLMServiceError(f"Failed to generate text after multiple retries: {e}")
+
 
     def generate_answer(self, query: str, context: str, max_tokens: int = 500, temperature: float = 0.7) -> str:
         """
@@ -135,16 +177,23 @@ class LLMService:
         Returns:
             Generated answer
         """
+        if not self.enabled:
+            self.logger.warning("LLMService is disabled. Skipping generate_answer operation. Returning empty string.")
+            return ""
         try:
             return self.provider.generate_with_context(query, context, max_tokens, temperature)
         except Exception as e:
             # Fallback to a simpler prompt
             system_prompt = self.system_prompts["answer_generation"]
             prompt = f"{system_prompt}\n\nContext: {context}\n\nQuestion: {query}\n\nAnswer:"
-            try:
-                return self.generate_text(prompt, max_tokens, temperature)
-            except Exception as e2:
-                raise LLMError(f"Error generating answer: {e2}")
+            # This call to generate_text will use its own retry logic and raise LLMServiceError if it fails.
+            return self.generate_text(prompt, max_tokens, temperature)
+        except LLMServiceError as e_service:
+            self.logger.error(f"Failed to generate answer due to underlying text generation error: {e_service}", exc_info=True)
+            raise LLMServiceError(f"Failed to generate answer due to text generation error: {e_service}")
+        except Exception as e:
+            self.logger.error(f"An unexpected error occurred while generating answer for query '{query[:50]}...': {e}", exc_info=True)
+            raise LLMServiceError(f"An unexpected error occurred while generating answer: {e}")
 
     def extract_tags(self, text: str, max_tags: int = 5) -> List[str]:
         """
@@ -157,6 +206,9 @@ class LLMService:
         Returns:
             List of extracted tags
         """
+        if not self.enabled:
+            self.logger.warning("LLMService is disabled. Skipping extract_tags operation. Returning empty list.")
+            return []
         try:
             # Prepare prompt for tag extraction
             system_prompt = self.system_prompts["tag_extraction"]
@@ -184,11 +236,14 @@ class LLMService:
                         tags.append(tag)
                         if len(tags) >= max_tags:
                             break
-
             return tags
+        except LLMServiceError as e_service:
+            self.logger.error(f"Failed to extract tags due to underlying text generation error: {e_service}", exc_info=True)
+            raise LLMServiceError(f"Failed to extract tags due to text generation error: {e_service}")
         except Exception as e:
-            print(f"Error extracting tags: {e}")
-            return []
+            self.logger.error(f"An unexpected error occurred during tag extraction for text '{text[:50]}...': {e}", exc_info=True)
+            raise LLMServiceError(f"An unexpected error occurred during tag extraction: {e}")
+
 
     def generate_title(self, text: str, max_length: int = 50) -> str:
         """
@@ -201,6 +256,9 @@ class LLMService:
         Returns:
             Generated title
         """
+        if not self.enabled:
+            self.logger.warning("LLMService is disabled. Skipping generate_title operation. Returning 'Untitled'.")
+            return "Untitled"
         try:
             # Prepare prompt for title generation
             system_prompt = self.system_prompts["title_generation"]
@@ -219,11 +277,14 @@ class LLMService:
             # Truncate if needed
             if len(title) > max_length:
                 title = title[:max_length - 3] + "..."
-
             return title
+        except LLMServiceError as e_service:
+            self.logger.error(f"Failed to generate title due to underlying text generation error: {e_service}", exc_info=True)
+            raise LLMServiceError(f"Failed to generate title due to text generation error: {e_service}")
         except Exception as e:
-            print(f"Error generating title: {e}")
-            return "Untitled"
+            self.logger.error(f"An unexpected error occurred during title generation for text '{text[:50]}...': {e}", exc_info=True)
+            raise LLMServiceError(f"An unexpected error occurred during title generation: {e}")
+
 
     def summarize_text(self, text: str, max_length: int = 200) -> str:
         """
@@ -236,6 +297,9 @@ class LLMService:
         Returns:
             Generated summary
         """
+        if not self.enabled:
+            self.logger.warning("LLMService is disabled. Skipping summarize_text operation. Returning 'Summary not available.'.")
+            return "Summary not available."
         try:
             # Prepare prompt for summarization
             system_prompt = self.system_prompts["summarization"]
@@ -260,11 +324,14 @@ class LLMService:
                 if last_period > max_length * 0.7:  # Only truncate at sentence if we don't lose too much
                     return truncated[:last_period + 1]
                 return truncated + "..."
-
             return summary
+        except LLMServiceError as e_service:
+            self.logger.error(f"Failed to summarize text due to underlying text generation error: {e_service}", exc_info=True)
+            raise LLMServiceError(f"Failed to summarize text due to text generation error: {e_service}")
         except Exception as e:
-            print(f"Error summarizing text: {e}")
-            return "Summary not available."
+            self.logger.error(f"An unexpected error occurred during text summarization for text '{text[:50]}...': {e}", exc_info=True)
+            raise LLMServiceError(f"An unexpected error occurred during text summarization: {e}")
+
 
     def extract_entities(self, text: str) -> Dict[str, List[str]]:
         """
@@ -276,6 +343,9 @@ class LLMService:
         Returns:
             Dictionary of entity types to lists of entities
         """
+        if not self.enabled:
+            self.logger.warning("LLMService is disabled. Skipping extract_entities operation. Returning empty dict.")
+            return {}
         try:
             # Prepare prompt for entity extraction
             prompt = """Extract named entities from the following text. 
@@ -307,13 +377,19 @@ class LLMService:
                     entities = json.loads(json_str)
                     return entities
                 else:
-                    return {}
-            except json.JSONDecodeError:
-                print(f"Error parsing entities response as JSON: {response}")
-                return {}
+                    # Consider raising error if JSON structure is not found or is invalid
+                    self.logger.error(f"Failed to parse JSON from LLM response for entity extraction. Response: {response[:100]}...")
+                    raise LLMServiceError(f"Failed to parse JSON from LLM response for entity extraction. Response: {response[:100]}...")
+            except json.JSONDecodeError as je:
+                self.logger.error(f"Invalid JSON in LLM response for entity extraction: {je}. Response: {response[:100]}...", exc_info=True)
+                raise LLMServiceError(f"Invalid JSON in LLM response for entity extraction: {je}. Response: {response[:100]}...")
+        except LLMServiceError as e_service:
+            self.logger.error(f"Failed to extract entities due to underlying text generation error: {e_service}", exc_info=True)
+            raise LLMServiceError(f"Failed to extract entities due to text generation error: {e_service}")
         except Exception as e:
-            print(f"Error extracting entities: {e}")
-            return {}
+            self.logger.error(f"An unexpected error occurred during entity extraction for text '{text[:50]}...': {e}", exc_info=True)
+            raise LLMServiceError(f"An unexpected error occurred during entity extraction: {e}")
+
 
     def generate_summary(self, text: str, max_length: int = 200) -> str:
         """

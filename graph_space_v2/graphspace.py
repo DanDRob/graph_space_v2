@@ -13,6 +13,7 @@ from graph_space_v2.utils.helpers.path_utils import get_user_data_path, get_conf
 
 import os
 import json
+import logging # Added
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -26,6 +27,7 @@ class GraphSpace:
     - Document processing for importing external content
     - Integration with external services like Google Drive
     """
+    logger = logging.getLogger(__name__) # Added logger instance
 
     def __init__(
         self,
@@ -71,6 +73,19 @@ class GraphSpace:
             fallback_model_name=self.config["llm"]["fallback_model"],
             use_api=use_api
         )
+
+        # Check config to globally disable LLMService if needed
+        # Default to True if the 'llm' section or 'llm_enabled' key is missing
+        llm_enabled_config = self.config.get("llm", {}).get("llm_enabled", True)
+        if not llm_enabled_config:
+            if self.llm_service: # Should always exist, but good practice to check
+                self.llm_service.enabled = False
+                self.logger.info("LLMService has been disabled based on 'llm_enabled: false' in configuration.")
+        elif not self.llm_service.enabled: # If it was already disabled (e.g. no API key)
+             self.logger.warning("LLMService is not enabled (e.g., API key missing or provider issue), overriding 'llm_enabled: true' from config.")
+        else:
+            self.logger.info("LLMService is enabled.")
+
 
         # Initialize services directly as top-level attributes
         self.note_service = NoteService(
@@ -143,6 +158,7 @@ class GraphSpace:
                 credentials_file=self.google_credentials_file,
                 document_processor=self.document_processor
             )
+            self.logger.info("GoogleDriveService instance created.")
 
             # If web authentication, don't authenticate immediately
             # The API endpoints will handle authentication for each request
@@ -151,15 +167,22 @@ class GraphSpace:
 
             return self._google_drive_service
         except Exception as e:
-            print(f"Warning: Failed to initialize Google Drive service: {e}")
+            self.logger.warning(f"Failed to initialize Google Drive service: {e}", exc_info=True)
             return None
 
     def _sync_components(self):
         """Synchronize components after initialization."""
         # Initialize embeddings for the knowledge graph
         if len(self.knowledge_graph.graph.nodes()) > 1:
-            print("Training embedding service on graph...")
-            self.embedding_service.train_on_graph(self.knowledge_graph.graph)
+            self.logger.info("Training embedding service on existing graph data...")
+            try:
+                self.embedding_service.train_on_graph(self.knowledge_graph.graph)
+                self.logger.info("Embedding service training on graph completed.")
+            except Exception as e: # Catch specific errors if EmbeddingService raises them
+                self.logger.error(f"Error during embedding service training on graph: {e}", exc_info=True)
+        else:
+            self.logger.info("Skipping embedding service training on graph: Not enough nodes.")
+
 
     def add_note(self, note_data: Dict[str, Any]) -> str:
         """
@@ -282,47 +305,58 @@ class GraphSpace:
             Dictionary with query results
         """
         try:
-            print(f"Processing query: {query_text}")
+            self.logger.info(f"Processing query: '{query_text}'")
 
             # Ensure the graph is fully built with all connections
-            print("Rebuilding knowledge graph to ensure all connections are present")
-            self.knowledge_graph.build_graph()
+            # Note: build_graph was refactored to _build_graph_from_data_lists
+            # For incremental updates, the graph should ideally always be up-to-date.
+            # If a full rebuild is desired here, it should be intentional.
+            # self.logger.info("Ensuring knowledge graph is up-to-date for query.")
+            # self.knowledge_graph._build_graph_from_data_lists() # Example if full rebuild needed. Usually not.
 
             # Use the query service for natural language queries
             result = self.query_service.query_by_natural_language(query_text)
 
             # If there's an error in the query service, fall back to basic search
-            if "error" in result:
-                print(f"Error in query service: {result['error']}")
-                print("Falling back to basic embedding search")
+            # QueryService should ideally raise exceptions rather than return dict with "error"
+            if isinstance(result, dict) and "error" in result:
+                self.logger.warning(f"Error in query service for query '{query_text}': {result['error']}. Falling back to basic search.")
 
                 # Embed the query
                 query_embedding = self.embedding_service.embed_text(query_text)
 
                 # Search for similar content
-                results = self.embedding_service.search(
+                search_results_dict = self.embedding_service.search(
                     query_embedding, max_results)
 
-                # Generate an answer using LLM
-                context = "\n".join([r.get("text", "")
-                                    for r in results.get("matches", [])])
+                matches = search_results_dict.get("matches", [])
+                context_texts = [r.get("text", "") for r in matches]
+                context = "\n".join(filter(None, context_texts))
 
-                print(
-                    f"Generating answer with {len(results.get('matches', []))} context items")
-                answer = self.llm_service.generate_answer(query_text, context)
+
+                self.logger.info(
+                    f"Generating answer with {len(matches)} context items for query '{query_text}'.")
+
+                answer = "Could not generate an answer."
+                if self.llm_service and self.llm_service.enabled:
+                    if context:
+                        answer = self.llm_service.generate_answer(query_text, context)
+                    else:
+                        self.logger.info("No context found from embedding search; attempting to answer query without context.")
+                        answer = self.llm_service.generate_text(query_text) # Or a specific method for no-context QA
+                else:
+                    self.logger.warning("LLMService is not available or disabled. Cannot generate answer for query.")
+
 
                 return {
                     "query": query_text,
                     "answer": answer,
-                    "sources": results.get("matches", [])
+                    "sources": matches
                 }
 
             return result
         except Exception as e:
-            print(f"Error in query: {e}")
-            import traceback
-            traceback.print_exc()
-            # Return a simple error response
+            self.logger.error(f"Error processing query '{query_text}': {e}", exc_info=True)
             return {
                 "query": query_text,
                 "error": str(e),

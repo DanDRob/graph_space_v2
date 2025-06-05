@@ -3,14 +3,16 @@ import os
 from datetime import datetime, timedelta
 import threading
 import json
+import logging # Added
 
 from graph_space_v2.integrations.google.web_auth import GoogleWebAuth
 from graph_space_v2.integrations.google.drive_service import GoogleDriveService
 from graph_space_v2.integrations.calendar.providers.google_calendar import GoogleCalendarProvider
 from graph_space_v2.integrations.calendar.calendar_service import CalendarService
-from graph_space_v2.utils.errors.exceptions import IntegrationError
+from graph_space_v2.utils.errors.exceptions import IntegrationError, APIError, EntityNotFoundError, ServiceError, TaskServiceError # Added relevant exceptions
 
 integrations_bp = Blueprint('integrations', __name__)
+logger = logging.getLogger(__name__) # Added logger instance
 
 # Initialize Google Web Auth
 
@@ -55,9 +57,13 @@ def google_auth_status():
 
         return jsonify({
             'authenticated': creds is not None and not (hasattr(creds, 'expired') and creds.expired)
-        })
+        }), 200
+    except IntegrationError as e:
+        logger.error(f"IntegrationError in google_auth_status: {e}", exc_info=True)
+        return jsonify({'authenticated': False, 'error': str(e)}), 502 # Bad Gateway or Service Unavailable for integration issues
     except Exception as e:
-        return jsonify({'authenticated': False, 'error': str(e)}), 500
+        logger.error(f"Unhandled exception in google_auth_status: {e}", exc_info=True)
+        return jsonify({'authenticated': False, 'error': "An unexpected error occurred."}), 500
 
 
 @integrations_bp.route('/integrations/google/auth/start', methods=['GET'])
@@ -72,17 +78,24 @@ def google_auth_start():
 
             # This will open a browser and run a local server for auth
             creds = google_auth.authenticate(user_id=user_id)
-
-            print(f"Authentication successful for user {user_id}")
-        except Exception as e:
-            print(f"Authentication error: {e}")
+            if creds:
+                logger.info(f"Google authentication successful in thread for user {user_id}")
+            else:
+                logger.warning(f"Google authentication in thread for user {user_id} did not return credentials.")
+        except Exception as e_thread:
+            logger.error(f"Error during Google authentication thread for user {user_id}: {e_thread}", exc_info=True)
 
     # Start authentication in a separate thread to not block the response
-    threading.Thread(target=run_auth_in_thread).start()
-
-    return jsonify({
-        'message': 'Authentication started. Please complete the process in the browser window that opens.'
-    })
+    try:
+        auth_thread = threading.Thread(target=run_auth_in_thread)
+        auth_thread.start()
+        logger.info(f"Google authentication thread started for user {user_id}.")
+        return jsonify({
+            'message': 'Authentication process started. Please complete the steps in your browser or console.'
+        }), 202 # Accepted
+    except Exception as e:
+        logger.error(f"Failed to start Google authentication thread for user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': "Failed to start authentication process."}), 500
 
 
 @integrations_bp.route('/integrations/google/auth/logout', methods=['POST'])
@@ -96,10 +109,14 @@ def google_auth_logout():
 
         # Revoke token
         revoked = google_auth.revoke_token(user_id)
-
-        return jsonify({'success': revoked})
+        logger.info(f"Google token revocation attempt for user {user_id}, result: {revoked}")
+        return jsonify({'success': revoked}), 200
+    except IntegrationError as e:
+        logger.error(f"IntegrationError in google_auth_logout for user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 502
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Unhandled exception in google_auth_logout for user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': "An unexpected error occurred during logout."}), 500
 
 # Google Drive Routes
 
@@ -150,9 +167,16 @@ def google_drive_files():
             max_results=max_results,
             order_by=order_by
         )
-        return jsonify({'files': files})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.info(f"Retrieved {len(files)} files from Google Drive for user {user_id}.")
+        return jsonify({'files': files}), 200
+    except IntegrationError as e: # Covers auth issues from get_credentials or drive_service issues
+        logger.error(f"IntegrationError listing Google Drive files for user {user_id}: {e}", exc_info=True)
+        if "Not authenticated" in str(e):
+            return jsonify({'error': str(e)}), 401
+        return jsonify({'error': str(e)}), 502
+    except Exception as e: # General errors
+        logger.error(f"Unhandled exception listing Google Drive files for user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': "An unexpected error occurred while listing Google Drive files."}), 500
 
 
 @integrations_bp.route('/integrations/google/drive/download/<file_id>', methods=['GET'])
@@ -188,39 +212,45 @@ def google_drive_download(file_id):
                     document_processor=graphspace.document_processor
                 )
                 drive_service.set_credentials(creds)
-        except Exception as e:
-            print(f"Error initializing drive service: {str(e)}")
-            return jsonify({'error': f'Failed to initialize Google Drive service: {str(e)}', 'success': False}), 500
+        except IntegrationError as ie: # Catch specific init error from drive_service if it raises one
+             logger.error(f"Failed to initialize Google Drive service for user {user_id} during download: {ie}", exc_info=True)
+             return jsonify({'error': f'Failed to initialize Google Drive service: {str(ie)}', 'success': False}), 502
+        except Exception as e_init_drive:
+            logger.error(f"Error initializing drive service for user {user_id} during download: {e_init_drive}", exc_info=True)
+            return jsonify({'error': f'Failed to initialize Google Drive service: {str(e_init_drive)}', 'success': False}), 500
 
-        if not drive_service.authenticated:
+        if not drive_service.authenticated: # Should be handled if set_credentials failed
+            logger.warning(f"Google Drive service not authenticated for user {user_id} during download.")
             return jsonify({'error': 'Google Drive service not authenticated', 'success': False}), 401
 
         # Get file metadata
-        try:
-            file_metadata = drive_service.service.files().get(
-                fileId=file_id, fields="name,mimeType").execute()
-            print(f"Retrieved metadata for file: {file_metadata.get('name')}")
-        except Exception as e:
-            print(f"Error getting file metadata: {str(e)}")
-            return jsonify({'error': f'Failed to get file metadata: {str(e)}', 'success': False}), 500
+        file_metadata = drive_service.service.files().get( # This call might raise Google API errors
+            fileId=file_id, fields="name,mimeType").execute()
+        logger.info(f"Retrieved metadata for file: {file_metadata.get('name')} for user {user_id}")
 
         # Import document directly
-        try:
-            document_id = drive_service.import_document(file_id)
-            print(f"Successfully imported document with ID: {document_id}")
-        except Exception as e:
-            print(f"Error importing document: {str(e)}")
-            return jsonify({'error': f'Failed to import document: {str(e)}', 'success': False}), 500
+        # This involves downloading, processing, and adding to KG. Can raise various errors.
+        document_id = drive_service.import_document(file_id)
+        logger.info(f"Successfully imported document with ID: {document_id} for user {user_id}")
 
         return jsonify({
-            'success': True,
+            'message': 'Document downloaded and processed successfully.',
             'document_id': document_id,
             'filename': file_metadata.get('name')
-        })
-    except Exception as e:
-        print(
-            f"Unexpected error in google_drive_download for file {file_id}: {str(e)}")
-        return jsonify({'error': str(e), 'success': False}), 500
+        }), 200 # Or 201 if a new resource (document node) is reliably created here
+
+    except IntegrationError as e_auth: # Covers auth issues from get_credentials
+        logger.warning(f"Google Drive authentication/authorization error for user {user_id} during download: {e_auth}", exc_info=True)
+        return jsonify({'error': str(e_auth), 'success': False}), 401
+    except APIError as e_api: # If drive_service methods raise APIError for Google API issues
+        logger.error(f"Google APIError during download for file {file_id}, user {user_id}: {e_api}", exc_info=True)
+        return jsonify({'error': f'Google API error: {str(e_api)}', 'success': False}), 502
+    except DocumentProcessingError as e_doc:
+        logger.error(f"DocumentProcessingError during download for file {file_id}, user {user_id}: {e_doc}", exc_info=True)
+        return jsonify({'error': f'Failed to process downloaded document: {str(e_doc)}', 'success': False}), 500
+    except Exception as e: # General catch-all
+        logger.error(f"Unexpected error in google_drive_download for file {file_id}, user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': f"An unexpected error occurred: {str(e)}", 'success': False}), 500
 
 # Google Calendar Routes
 
@@ -269,9 +299,16 @@ def google_calendar_events():
             calendar_id, start_date, end_date)
         return jsonify({
             'events': [event.to_dict() for event in events]
-        })
+        }), 200
+    except IntegrationError as e_auth:
+        logger.warning(f"Google Calendar authentication/authorization error for user {user_id}: {e_auth}", exc_info=True)
+        return jsonify({'error': str(e_auth)}), 401
+    except APIError as e_api: # If calendar_provider methods raise APIError
+        logger.error(f"Google APIError listing calendar events for user {user_id}: {e_api}", exc_info=True)
+        return jsonify({'error': f'Google API error: {str(e_api)}'}), 502
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Unhandled exception listing calendar events for user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': "An unexpected error occurred."}), 500
 
 
 @integrations_bp.route('/integrations/google/calendar/calendars', methods=['GET'])
@@ -299,9 +336,16 @@ def google_calendar_list():
         calendars = calendar_provider.get_calendars()
         return jsonify({
             'calendars': [calendar.to_dict() for calendar in calendars]
-        })
+        }), 200
+    except IntegrationError as e_auth:
+        logger.warning(f"Google Calendar authentication/authorization error for user {user_id} (list calendars): {e_auth}", exc_info=True)
+        return jsonify({'error': str(e_auth)}), 401
+    except APIError as e_api:
+        logger.error(f"Google APIError listing calendars for user {user_id}: {e_api}", exc_info=True)
+        return jsonify({'error': f'Google API error: {str(e_api)}'}), 502
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Unhandled exception listing calendars for user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': "An unexpected error occurred."}), 500
 
 
 @integrations_bp.route('/integrations/google/calendar/sync-tasks', methods=['POST'])
@@ -349,25 +393,37 @@ def google_calendar_sync_tasks():
                     results.append({
                         'task_id': task_id,
                         'success': False,
-                        'error': 'Task not found'
+                        'error': 'Task not found',
+                        'message': str(e_task_not_found)
                     })
                     continue
+                except Exception as e_task_get: # Other errors getting task
+                    logger.error(f"Error retrieving task {task_id} for calendar sync (user {user_id}): {e_task_get}", exc_info=True)
+                    results.append({'task_id': task_id, 'success': False, 'error': f"Failed to retrieve task: {str(e_task_get)}"})
+                    continue
 
-                updated_task = task_sync.sync_task_to_calendar(
-                    task, 'google', calendar_id)
-
+                updated_task = task_sync.sync_task_to_calendar(task, 'google', calendar_id)
                 results.append({
                     'task_id': task_id,
                     'success': updated_task is not None,
-                    'calendar_id': updated_task.calendar_id if updated_task else None
+                    'calendar_event_id': updated_task.calendar_event_id if updated_task and hasattr(updated_task, 'calendar_event_id') else None,
+                    'message': 'Sync successful' if updated_task else 'Sync did not result in an update or failed silently by provider.'
                 })
-            except Exception as e:
-                results.append({
-                    'task_id': task_id,
-                    'success': False,
-                    'error': str(e)
-                })
+            except IntegrationError as e_sync: # Errors from sync_task_to_calendar itself
+                logger.error(f"IntegrationError syncing task {task_id} to calendar for user {user_id}: {e_sync}", exc_info=True)
+                results.append({'task_id': task_id, 'success': False, 'error': f"Sync error: {str(e_sync)}"})
+            except Exception as e_loop: # Catch-all for unexpected errors in loop
+                logger.error(f"Unexpected error syncing task {task_id} in loop for user {user_id}: {e_loop}", exc_info=True)
+                results.append({'task_id': task_id, 'success': False, 'error': f"Unexpected sync error: {str(e_loop)}"})
 
-        return jsonify({'results': results})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.info(f"Calendar sync task processing completed for user {user_id}. Results: {results}")
+        return jsonify({'results': results}), 200
+    except IntegrationError as e_auth: # For initial auth/setup issues
+        logger.warning(f"Google Calendar authentication/authorization error for user {user_id} (sync tasks): {e_auth}", exc_info=True)
+        return jsonify({'error': str(e_auth)}), 401
+    except ServiceError as e_service: # e.g. TaskService not available
+        logger.error(f"ServiceError during calendar task sync setup for user {user_id}: {e_service}", exc_info=True)
+        return jsonify({'error': f"A service error occurred: {str(e_service)}"}), 500
+    except Exception as e: # General catch-all for setup before loop
+        logger.error(f"Unhandled exception setting up calendar task sync for user {user_id}: {e}", exc_info=True)
+        return jsonify({'error': "An unexpected error occurred during task sync setup."}), 500

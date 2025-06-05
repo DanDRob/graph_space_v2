@@ -9,8 +9,9 @@ from dataclasses import dataclass, field
 import faiss
 import pickle
 import networkx as nx
+import logging # Added
 
-from graph_space_v2.utils.errors.exceptions import EmbeddingError
+from graph_space_v2.utils.errors.exceptions import EmbeddingServiceError
 from graph_space_v2.utils.helpers.path_utils import ensure_dir_exists, get_data_dir
 
 
@@ -25,6 +26,8 @@ class EmbeddingItem:
 
 class EmbeddingService:
     """Service for text embeddings and semantic search."""
+
+    logger = logging.getLogger(__name__) # Added logger instance
 
     def __init__(
         self,
@@ -64,11 +67,10 @@ class EmbeddingService:
         # Initialize model
         try:
             self.model = SentenceTransformer(model_name, device=self.device)
-            print(f"Loaded embedding model: {model_name} on {self.device}")
+            self.logger.info(f"Loaded embedding model: {model_name} on {self.device}")
         except Exception as e:
-            print(f"Error loading embedding model: {e}")
-            print("Using a randomly initialized embedding function instead.")
-            self.model = None
+            self.logger.warning(f"Error loading embedding model '{model_name}': {e}. Service will use random embeddings if model is None.", exc_info=True)
+            self.model = None # Explicitly set to None on failure
 
         # Create storage directory if it doesn't exist
         os.makedirs(self.storage_path, exist_ok=True)
@@ -98,16 +100,26 @@ class EmbeddingService:
         if not text.strip():
             return np.zeros(self.dimension)
 
+        # Check cache first
+        if text in self.embeddings_cache:
+            return self.embeddings_cache[text]
+
         if self.model is None:
             # Fallback to random embeddings
-            return np.random.randn(self.dimension).astype(np.float32)
+            embedding = np.random.randn(self.dimension).astype(np.float32)
+        else:
+            try:
+                # Generate embedding
+                model_output = self.model.encode(text, convert_to_tensor=True)
+                embedding = model_output.cpu().numpy().astype(np.float32)
+            except Exception as e:
+                self.logger.error(f"Failed to generate embedding for text '{text[:50]}...': {e}", exc_info=True)
+                raise EmbeddingServiceError(f"Error generating embedding for text '{text[:50]}...': {e}")
 
-        try:
-            # Generate embedding
-            embedding = self.model.encode(text, convert_to_tensor=True)
-            return embedding.cpu().numpy().astype(np.float32)
-        except Exception as e:
-            raise EmbeddingError(f"Error generating embedding: {e}")
+        # Store in cache and save
+        self.embeddings_cache[text] = embedding
+        self._save_cache() # Save cache after adding new embedding
+        return embedding
 
     def embed_texts(self, texts: List[str]) -> List[np.ndarray]:
         """
@@ -122,16 +134,60 @@ class EmbeddingService:
         if not texts:
             return []
 
+        results = [None] * len(texts)
+        texts_to_embed_map = {}  # Stores original index -> text for cache misses
+
+        for i, text in enumerate(texts):
+            if not text.strip():
+                results[i] = np.zeros(self.dimension)
+            elif text in self.embeddings_cache:
+                results[i] = self.embeddings_cache[text]
+            else:
+                texts_to_embed_map[i] = text
+
+        texts_needing_embedding_list = list(texts_to_embed_map.values())
+        original_indices_for_new_embeddings = list(texts_to_embed_map.keys())
+
+        if not texts_needing_embedding_list:
+            # Ensure all results are numpy arrays if some were pre-filled with zeros
+            return [res if isinstance(res, np.ndarray) else np.zeros(self.dimension) for res in results]
+
+
+        new_embeddings_list = []
         if self.model is None:
             # Fallback to random embeddings
-            return [np.random.randn(self.dimension).astype(np.float32) for _ in texts]
+            new_embeddings_list = [np.random.randn(self.dimension).astype(np.float32) for _ in texts_needing_embedding_list]
+        else:
+            try:
+                # Generate embeddings for texts not in cache
+                model_output = self.model.encode(texts_needing_embedding_list, convert_to_tensor=True)
+                new_embeddings_list = [e.cpu().numpy().astype(np.float32) for e in model_output]
+            except Exception as e:
+                self.logger.error(f"Failed to generate batch embeddings for {len(texts_needing_embedding_list)} texts: {e}", exc_info=True)
+                raise EmbeddingServiceError(f"Error generating batch embeddings for {len(texts_needing_embedding_list)} texts: {e}")
 
-        try:
-            # Generate embeddings
-            embeddings = self.model.encode(texts, convert_to_tensor=True)
-            return [e.cpu().numpy().astype(np.float32) for e in embeddings]
-        except Exception as e:
-            raise EmbeddingError(f"Error generating batch embeddings: {e}")
+        cache_updated = False
+        for i, new_embedding in enumerate(new_embeddings_list):
+            original_idx = original_indices_for_new_embeddings[i]
+            original_text = texts_needing_embedding_list[i]
+
+            results[original_idx] = new_embedding
+            self.embeddings_cache[original_text] = new_embedding
+            cache_updated = True
+
+        if cache_updated:
+            self._save_cache()
+
+        # Ensure all results are numpy arrays, especially if some were pre-filled from cache and others newly computed
+        # or if some were empty strings resulting in zeros.
+        final_results = []
+        for res_vec in results:
+            if res_vec is None: # Should not happen if logic is correct
+                 final_results.append(np.zeros(self.dimension))
+            else:
+                 final_results.append(res_vec)
+        return final_results
+
 
     def store_embedding(self, id: str, embedding: np.ndarray, metadata: Dict[str, Any] = None) -> None:
         """
@@ -172,7 +228,7 @@ class EmbeddingService:
             True if successful, False if not found
         """
         if id not in self.embeddings:
-            return False
+            raise EmbeddingServiceError(f"Embedding with ID '{id}' not found, cannot update.")
 
         existing_item = self.embeddings[id]
 
@@ -204,7 +260,7 @@ class EmbeddingService:
             True if successful, False if not found
         """
         if id not in self.embeddings:
-            return False
+            raise EmbeddingServiceError(f"Embedding with ID '{id}' not found, cannot delete.")
 
         # Remove the embedding
         del self.embeddings[id]
@@ -227,10 +283,10 @@ class EmbeddingService:
         Returns:
             The embedding vector or None if not found
         """
-        if id not in self.embeddings:
-            return None
-
-        return self.embeddings[id].embedding
+        item = self.embeddings.get(id)
+        if item is None:
+            raise EmbeddingServiceError(f"Embedding with ID '{id}' not found.")
+        return item.embedding
 
     def search(self, query_embedding: np.ndarray, limit: int = 5, filter_by: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -332,8 +388,10 @@ class EmbeddingService:
             # Add to index
             self.index.add(embeddings_array)
         except Exception as e:
-            print(f"Error building index: {e}")
-            self.index = None
+            self.logger.error(f"Failed to build FAISS index: {e}", exc_info=True)
+            self.index = None # Ensure index is None on failure
+            raise EmbeddingServiceError(f"Error building FAISS index: {e}")
+
 
     def _load_embeddings(self) -> None:
         """Load embeddings from disk."""
@@ -356,11 +414,13 @@ class EmbeddingService:
                 )
                 self.embeddings[item.id] = item
 
-            print(
+            self.logger.info(
                 f"Loaded {len(self.embeddings)} embeddings from {embeddings_file}")
         except Exception as e:
-            print(f"Error loading embeddings: {e}")
-            self.embeddings = {}
+            self.logger.error(f"Failed to load embeddings from {embeddings_file}: {e}", exc_info=True)
+            self.embeddings = {} # Reset on failure
+            raise EmbeddingServiceError(f"Error loading embeddings from {embeddings_file}: {e}")
+
 
     def _save_embeddings(self) -> None:
         """Save embeddings to disk."""
@@ -382,10 +442,12 @@ class EmbeddingService:
             with open(embeddings_file, "w") as f:
                 json.dump(data, f)
 
-            print(
+            self.logger.info(
                 f"Saved {len(self.embeddings)} embeddings to {embeddings_file}")
         except Exception as e:
-            print(f"Error saving embeddings: {e}")
+            self.logger.error(f"Failed to save embeddings to {embeddings_file}: {e}", exc_info=True)
+            raise EmbeddingServiceError(f"Error saving embeddings to {embeddings_file}: {e}")
+
 
     def train_on_graph(self, graph) -> None:
         """
@@ -448,12 +510,15 @@ class EmbeddingService:
                     # Skip nodes not in vocabulary
                     continue
 
-            print(
-                f"Trained and stored embeddings for {len(graph.nodes)} nodes")
+            self.logger.info(
+                f"Trained and stored graph embeddings for {len(self.embeddings) - initial_embedding_count} new nodes (total graph nodes: {len(graph.nodes)}).")
         except ImportError:
-            print("Could not train graph embeddings: node2vec package not available")
+            self.logger.error("node2vec package not available. Cannot train graph embeddings.", exc_info=True)
+            raise EmbeddingServiceError("node2vec package not available, cannot train graph embeddings.")
         except Exception as e:
-            print(f"Error training graph embeddings: {e}")
+            self.logger.error(f"Error training graph embeddings: {e}", exc_info=True)
+            raise EmbeddingServiceError(f"Error training graph embeddings: {e}")
+
 
     def get_vector_store_info(self) -> Dict[str, Any]:
         """
@@ -485,11 +550,13 @@ class EmbeddingService:
         try:
             with open(cache_file, "rb") as f:
                 self.embeddings_cache = pickle.load(f)
-            print(
-                f"Loaded {len(self.embeddings_cache)} embeddings from {cache_file}")
+            self.logger.info(
+                f"Loaded {len(self.embeddings_cache)} text embeddings from cache file: {cache_file}")
         except Exception as e:
-            print(f"Error loading embeddings cache: {e}")
-            self.embeddings_cache = {}
+            self.logger.error(f"Failed to load embeddings cache from {cache_file}: {e}", exc_info=True)
+            self.embeddings_cache = {} # Reset on failure
+            raise EmbeddingServiceError(f"Error loading embeddings cache from {cache_file}: {e}")
+
 
     def _save_cache(self) -> None:
         """Save embeddings cache to disk."""
@@ -499,7 +566,8 @@ class EmbeddingService:
             # Save to file
             with open(cache_file, "wb") as f:
                 pickle.dump(self.embeddings_cache, f)
-            print(
-                f"Saved {len(self.embeddings_cache)} embeddings to {cache_file}")
+            self.logger.info(
+                f"Saved {len(self.embeddings_cache)} text embeddings to cache file: {cache_file}")
         except Exception as e:
-            print(f"Error saving embeddings cache: {e}")
+            self.logger.error(f"Failed to save embeddings cache to {cache_file}: {e}", exc_info=True)
+            raise EmbeddingServiceError(f"Error saving embeddings cache to {cache_file}: {e}")

@@ -48,6 +48,26 @@ class EmbeddingError(GraphSpaceError):
     pass
 
 
+class NoteServiceError(ServiceError):
+    """Raised for errors specific to the NoteService."""
+    pass
+
+
+class TaskServiceError(ServiceError):
+    """Raised for errors specific to the TaskService."""
+    pass
+
+
+class EmbeddingServiceError(ServiceError):
+    """Raised for errors specific to the EmbeddingService."""
+    pass
+
+
+class LLMServiceError(ServiceError):
+    """Raised for errors specific to the LLMService."""
+    pass
+
+
 class LLMError(GraphSpaceError):
     """Raised when there is an error with a language model."""
     pass
