@@ -183,7 +183,12 @@ class Task(BaseModel):
             return None
 
         # Parse the start date
-        start_date = self.due_date or self.recurrence_start_date or datetime.now().isoformat()
+        start_date = (
+            self.recurrence_next_run
+            or self.due_date
+            or self.recurrence_start_date
+            or datetime.now().isoformat()
+        )
 
         try:
             base_date = datetime.fromisoformat(start_date)

@@ -21,7 +21,10 @@ class TaskService:
         self.llm_service = llm_service
 
     def add_task(self, task_data: Dict[str, Any]) -> str:
-        if not isinstance(task_data, Task):
+        if isinstance(task_data, Task):
+            task = task_data
+            task_data = task.to_dict()
+        else:
             # Generate title using LLM if available and not provided
             if self.llm_service and not task_data.get("title") and task_data.get("description"):
                 title = self.llm_service.generate_title(
@@ -63,16 +66,17 @@ class TaskService:
 
         return None
 
-    def get_all_tasks(self) -> List[Dict[str, Any]]:
-        """
-        Get all tasks as dictionaries instead of Task objects.
+    def get_all_tasks(self) -> List[Task]:
+        """Return every stored task as a :class:`Task` instance.
 
         Returns:
-            List of task dictionaries
+            List[Task]: Concrete task models loaded from the knowledge graph.
         """
-        return [task.to_dict() for task in
-                [Task.from_dict(task_data) for task_data in
-                 self.knowledge_graph.data.get("tasks", [])]]
+
+        return [
+            Task.from_dict(task_data)
+            for task_data in self.knowledge_graph.data.get("tasks", [])
+        ]
 
     def update_task(self, task_id: str, task_data: Dict[str, Any]) -> Optional[Task]:
         # Set the updated_at timestamp

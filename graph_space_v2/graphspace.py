@@ -194,8 +194,8 @@ class GraphSpace:
         return self.task_service.add_task(task_data)
 
     def get_tasks(self):
-        """Get all tasks."""
-        return self.task_service.get_all_tasks()
+        """Get all tasks as serializable dictionaries."""
+        return [task.to_dict() for task in self.task_service.get_all_tasks()]
 
     def get_task(self, task_id: str):
         """Get a task by ID."""

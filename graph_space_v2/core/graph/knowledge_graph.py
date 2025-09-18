@@ -891,19 +891,35 @@ class KnowledgeGraph:
         # Find and remove the entity from our data collections
         entity_found = False
 
+        original_counts = {
+            "notes": len(self.data.get("notes", [])),
+            "tasks": len(self.data.get("tasks", [])),
+            "contacts": len(self.data.get("contacts", [])),
+        }
+
         # Try to find and remove from notes
-        self.data["notes"] = [note for note in self.data["notes"]
-                              if note.get("id") != entity_id]
+        self.data["notes"] = [
+            note for note in self.data["notes"]
+            if note.get("id") != entity_id
+        ]
+        if len(self.data["notes"]) < original_counts["notes"]:
+            entity_found = True
 
         # Try to find and remove from tasks
-        self.data["tasks"] = [task for task in self.data["tasks"]
-                              if task.get("id") != entity_id]
+        self.data["tasks"] = [
+            task for task in self.data["tasks"]
+            if task.get("id") != entity_id
+        ]
+        if len(self.data["tasks"]) < original_counts["tasks"]:
+            entity_found = True
 
         # Try to find and remove from contacts
-        orig_contact_count = len(self.data["contacts"])
-        self.data["contacts"] = [contact for contact in self.data["contacts"]
-                                 if contact.get("id") != entity_id]
-        entity_found = len(self.data["contacts"]) < orig_contact_count
+        self.data["contacts"] = [
+            contact for contact in self.data["contacts"]
+            if contact.get("id") != entity_id
+        ]
+        if len(self.data["contacts"]) < original_counts["contacts"]:
+            entity_found = True
 
         if not entity_found:
             return False
