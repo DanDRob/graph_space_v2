@@ -8,10 +8,11 @@ tasks_bp = Blueprint('tasks', __name__)
 
 @tasks_bp.route('/tasks', methods=['GET'])
 def get_tasks():
+    """Return all tasks in dictionary form."""
     try:
         graphspace = current_app.config['GRAPHSPACE']
         tasks = graphspace.task_service.get_all_tasks()
-        return jsonify({'tasks': tasks})
+        return jsonify({'tasks': [task.to_dict() for task in tasks]})
     except Exception as e:
         print(f"Error getting tasks: {e}")
         traceback.print_exc()
@@ -20,6 +21,7 @@ def get_tasks():
 
 @tasks_bp.route('/tasks/<task_id>', methods=['GET'])
 def get_task(task_id):
+    """Fetch a single task by identifier."""
     try:
         graphspace = current_app.config['GRAPHSPACE']
         task = graphspace.task_service.get_task(task_id)
@@ -27,7 +29,7 @@ def get_task(task_id):
         if not task:
             return jsonify({'error': 'Task not found'}), 404
 
-        return jsonify(task)
+        return jsonify(task.to_dict())
     except Exception as e:
         print(f"Error getting task {task_id}: {e}")
         traceback.print_exc()
@@ -86,6 +88,7 @@ def add_task():
 @tasks_bp.route('/tasks/<task_id>', methods=['PUT'])
 @validate_json_request
 def update_task(task_id):
+    """Update the provided task with any supplied fields."""
     try:
         data = request.json
 
@@ -96,7 +99,7 @@ def update_task(task_id):
             return jsonify({'error': 'Task not found'}), 404
 
         # Update all fields provided in the request
-        task_data = task.copy()
+        task_data = task.to_dict()
 
         # List of valid fields that can be updated
         valid_fields = [
@@ -115,10 +118,10 @@ def update_task(task_id):
         task_data['updated_at'] = datetime.now().isoformat()
 
         # Update in service
-        success = graphspace.task_service.update_task(
+        updated_task = graphspace.task_service.update_task(
             task_id, task_data)
 
-        if not success:
+        if not updated_task:
             return jsonify({'error': 'Failed to update task'}), 500
 
         return jsonify({'success': True, 'task_id': task_id})
@@ -146,14 +149,16 @@ def delete_task(task_id):
 
 @tasks_bp.route('/tasks/process_recurring', methods=['POST'])
 def process_recurring_tasks():
+    """Process recurring templates and emit any created tasks."""
     try:
         graphspace = current_app.config['GRAPHSPACE']
-        results = graphspace.task_service.process_recurring_tasks()
+        created_tasks = graphspace.task_service.process_recurring_tasks()
 
         return jsonify({
             'success': True,
-            'processed': results.get('processed', 0),
-            'created': results.get('created', 0)
+            'processed': len(created_tasks),
+            'created': len(created_tasks),
+            'tasks': [task.to_dict() for task in created_tasks]
         })
     except Exception as e:
         print(f"Error processing recurring tasks: {e}")
